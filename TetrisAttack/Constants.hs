@@ -32,7 +32,7 @@ halfScreenSizeYf :: Float
 halfScreenSizeYf = 0.5 * screenSizeYf
 
 blockSize :: Int
-blockSize = 50
+blockSize = 35
 
 blocksPerRow :: Int
 blocksPerRow = 6

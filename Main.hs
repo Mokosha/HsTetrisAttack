@@ -17,6 +17,8 @@ import System.FilePath
 import Paths_TetrisAttack
 import TetrisAttack.Constants
 
+import qualified Data.Vector.Unboxed as V
+
 --------------------------------------------------------------------------------
 
 camera :: L.GameWire a L.Camera
@@ -32,23 +34,7 @@ data TileType = Stationary TileColor
                 -- once it's done swapping
               | Swapping Tile
 
-type Tile = (Location, TileType)
-type TileLogic = L.GameWire Tile Tile
-
-data GameResult = GameOver
-                | Running
-                deriving (Eq, Show, Ord, Read)
-
-initialTiles :: [Tile]
-initialTiles = zipWith (,) ([(x, y) | x <- [1..blocksPerRow], y <- [1..(rowsPerBoard - 10)]])
-               (cycle $ map Stationary [Red , Green , Blue , Yellow , Purple])
-
-analyzeTiles :: [Tile] -> GameResult
-analyzeTiles tiles 
-  | any (\((_, y), _) -> y > rowsPerBoard) tiles = GameOver
-  | otherwise = Running
-
-mkCursor :: Location -> IO (L.GameWire a Cursor)
+mkCursor :: Location -> IO (L.GameWire Float Cursor)
 mkCursor loc' = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTextureFromPNG
   ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
@@ -63,15 +49,14 @@ mkCursor loc' = do
           (V2 trx try) = 0.5 *^ (blockCenter (curx, cury) ^+^ (blockCenter (curx + 1, cury)))
 
           xf :: L.Transform
-          xf = L.translate ((V3 trx try 0) ^-^ ((bs * 0.125) *^ (V3 1 1 0))) $
-               L.translate (V3 0 0 $ renderDepth RenderLayer'Cursor) $
-               L.nonuniformScale (V3 (2*bs*8/7) (bs*8/7) 1) $
+          xf = L.translate (V3 trx try $ renderDepth RenderLayer'Cursor) $
+               L.nonuniformScale (V3 (bs*8/7) (bs*4/7) 1) $
                L.identity
 
       censor (L.Render3DAction xf ro :) $
         return (Right c)
       
-    cursor :: Location -> L.GameWire a Cursor
+    cursor :: Location -> L.GameWire Float Cursor
     cursor oldloc = mkGenN $ \_ -> do
       ipt <- get
       let mapFst f (a, b) = (f a, b)
@@ -84,11 +69,21 @@ mkCursor loc' = do
             L.withPressedKey ipt GLFW.Key'Left (mapFst (flip (-) 1)) $
             L.withPressedKey ipt GLFW.Key'Right (mapFst (+1)) oldloc
       put $ foldl (flip L.debounceKey) ipt
-        [GLFW.Key'Up, GLFW.Key'Down, GLFW.Key'Left, GLFW.Key'Right]
+        [GLFW.Key'Up, GLFW.Key'Down, GLFW.Key'Left, GLFW.Key'Right, GLFW.Key'Space]
       return (Right (newloc, L.isKeyPressed GLFW.Key'Space ipt), cursor newloc)
 
-tile :: Tile -> TileLogic
-tile = pure
+type Tile = (Location, TileType)
+type TileLogic = L.GameWire Float Tile
+type Board = V.Vector (V.Vector TileLogic)
+
+initBoard :: [Tile]
+initBoard = zipWith (,) ([(x, y) | x <- [1..blocksPerRow], y <- [1..(rowsPerBoard - 10)]])
+               (cycle $ map Stationary [Red, Green, Blue, Yellow, Purple])
+
+analyzeTiles :: [Tile] -> GameResult
+analyzeTiles tiles
+  | any (\((_, y), _) -> y > rowsPerBoard) tiles = GameOver
+  | otherwise = Running
 
 mkBoard :: [Tile] -> IO (L.GameWire Cursor [Tile])
 mkBoard tiles' = do
@@ -109,11 +104,15 @@ mkBoard tiles' = do
     boardLogic tiles = mkGenN $ \(loc, swap) -> do
       return (Right tiles, boardLogic tiles)
 
+data GameResult = GameOver
+                | Running
+                deriving (Eq, Show, Ord, Read)
+
 game :: IO (L.GameWire GameResult GameResult)
 game = do
-  board <- mkBoard initialTiles
+  board <- mkBoard initBoard
   cursor <- mkCursor boardCenter
-  return $ when (== Running) >>> cursor >>> board >>> (arr analyzeTiles)
+  return $ when (== Running) >>> (pure 0) >>> cursor >>> board >>> (arr analyzeTiles)
 
 initGame :: IO (L.Game GameResult)
 initGame = do
