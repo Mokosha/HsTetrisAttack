@@ -20,12 +20,13 @@ data-files:          cursor.png
 executable TetrisAttack
   main-is:        Main.hs
   other-modules:  TetrisAttack.Constants
-  ghc-options:    -Wall -rtsopts -O3
+  ghc-options:    -Wall -rtsopts
   build-depends:  base > 4.6,
                   GLFW-b,
                   lambency,
                   linear,
                   vector,
+                  containers,
                   netwire >= 5.0.0,
                   mtl >= 2.1.2,
                   filepath
