@@ -3,7 +3,8 @@ module TetrisAttack.Constants (
   blocksPerRow, rowsPerBoard,
   blockSize, boardSizeX, boardSizeY, boardSizeXf, boardSizeYf, halfBoardSizeXf, halfBoardSizeYf,
   boardOrigin, boardCenter, blockOrigin, blockCenter,
-  RenderLayer(..), renderDepth
+  RenderLayer(..), renderDepth,
+  bForceStationaryBeforeSwap, gSwapSpeed
 ) where
 
 --------------------------------------------------------------------------------
@@ -87,3 +88,13 @@ renderDepth :: RenderLayer -> Float
 renderDepth RenderLayer'Board = (-10)
 renderDepth RenderLayer'Tiles = (-9)
 renderDepth RenderLayer'Cursor = (-8)
+
+--------------------------------------------------------------------------------
+
+-- Gameplay constants
+
+bForceStationaryBeforeSwap :: Bool
+bForceStationaryBeforeSwap = True
+
+gSwapSpeed :: Float
+gSwapSpeed = 0.2

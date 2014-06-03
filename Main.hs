@@ -114,7 +114,7 @@ moving m color start end =
         in
          censor (L.Render3DAction xf ro :) (return $ Right (end, Moving color))
   in
-   (smoothstep 0.3 >>> lerpWire >>> movingWire) --> (stationary m color end)
+   (smoothstep gSwapSpeed >>> lerpWire >>> movingWire) --> (stationary m color end)
 
 initBoard :: TileMap -> Board
 initBoard m =
@@ -145,22 +145,38 @@ updateTileLogic (x, y) logic board = let
 updateBoard :: TileMap -> Cursor -> (Board, BoardState) -> Board
 updateBoard _ (_, False) (board, _) = board
 updateBoard m ((x, y), True) (board, st) = let
+
   (_, leftTile) = getTile (x, y) st
   (_, rightTile) = getTile (x + 1, y) st
 
-  leftLogic = case rightTile of
-    Stationary color -> moving m color (x + 1, y) (x, y)
-    Moving color -> moving m color (x + 1, y) (x, y)
-    _ -> getTileLogic (x, y) board
+  swapNonStationary = let
+    leftLogic = case rightTile of
+      Stationary color -> moving m color (x + 1, y) (x, y)
+      Moving color -> moving m color (x + 1, y) (x, y)
+      _ -> getTileLogic (x, y) board
 
-  rightLogic = case leftTile of
-    Stationary color -> moving m color (x, y) (x + 1, y)
-    Moving color -> moving m color (x, y) (x + 1, y)
-    _ -> getTileLogic (x + 1, y) board
+    rightLogic = case leftTile of
+      Stationary color -> moving m color (x, y) (x + 1, y)
+      Moving color -> moving m color (x, y) (x + 1, y)
+      _ -> getTileLogic (x + 1, y) board
+
+    in
+     updateTileLogic (x, y) leftLogic $
+     updateTileLogic (x + 1, y) rightLogic board
+
+  swapStationary = let
+    (leftLogic, rightLogic) = case (rightTile, leftTile) of
+      (Stationary rcolor, Stationary lcolor) ->
+        (moving m rcolor (x + 1, y) (x, y),
+         moving m lcolor (x, y) (x + 1, y))
+      _ -> (getTileLogic (x, y) board, getTileLogic (x + 1, y) board)
+
+    in
+     updateTileLogic (x, y) leftLogic $
+     updateTileLogic (x + 1, y) rightLogic board
 
   in
-   updateTileLogic (x, y) leftLogic $
-   updateTileLogic (x + 1, y) rightLogic board
+   if bForceStationaryBeforeSwap then swapStationary else swapNonStationary
 
 type ColumnCollection = Either () ([Tile], [TileLogic])
 type RowCollection = Either () ([V.Vector Tile], [V.Vector TileLogic])
