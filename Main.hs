@@ -93,8 +93,10 @@ moving m color start end =
       lerpWire = mkSF_ $ \t -> ((1 - t) *^ startv) + (t *^ endv)
 
       smoothstep :: Float -> L.GameWire a Float
-      smoothstep duration = timeF >>> (mkPure_ $ \t ->
-        if t > duration then (Left ()) else (Right (t / duration)))
+      smoothstep duration =
+        timeF >>>
+        (mkPure_ $ \t -> if t > duration then (Left ()) else (Right (t / duration))) >>>
+        (mkSF_ $ \x -> let x3 = x*x*x in 6*x3*x*x - 15*x3*x + 10*x3)
 
       movingWire :: L.GameWire (V2 Float) Tile
       movingWire = mkGen_ $ \(V2 trx try) -> let
