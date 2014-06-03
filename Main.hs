@@ -31,7 +31,20 @@ type Cursor = (Location, Bool)
 
 data TileColor = Red | Green | Blue | Yellow | Purple
                deriving (Eq, Show, Ord, Read)
+
+-- !FIXME! Right now we have to keep track of tile location because otherwise
+-- we won't know when the game ends. If we actually keep track of whether or not
+-- the game ends by when we need to advance the blocks then it will only need
+-- to check if blocks exist in the top.
+data TileState = Empty
+               | Stationary TileColor
+               | Moving TileColor
 type TileMap = Map.Map TileColor L.RenderObject
+
+type Tile = (Location, TileState)
+type TileLogic = L.GameWire Float Tile
+type Board = V.Vector (V.Vector TileLogic)
+type BoardState = V.Vector (V.Vector Tile)
 
 mkCursor :: Location -> IO (L.GameWire Float Cursor)
 mkCursor loc' = do
@@ -68,11 +81,6 @@ mkCursor loc' = do
         [GLFW.Key'Up, GLFW.Key'Down, GLFW.Key'Left, GLFW.Key'Right, GLFW.Key'Space]
       return (Right (newloc, L.isKeyPressed GLFW.Key'Space ipt), cursor newloc)
 
-type Tile = (Location, TileColor)
-type TileLogic = L.GameWire Float Tile
-type Board = V.Vector (V.Vector TileLogic)
-type BoardState = V.Vector (V.Vector Tile)
-
 stationary :: TileMap -> TileColor -> Location -> L.GameWire Float Tile
 stationary m color loc =
   let ro = m Map.! color
@@ -81,7 +89,7 @@ stationary m color loc =
            L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 1))) $
            L.identity
   in
-   mkGen_ $ \_ -> censor (L.Render3DAction xf ro :) (return $ Right (loc, color))
+   mkGen_ $ \_ -> censor (L.Render3DAction xf ro :) (return $ Right (loc, Stationary color))
 
 moving :: TileMap -> TileColor -> Location -> Location -> L.GameWire Float Tile
 moving m color start end =
@@ -104,7 +112,7 @@ moving m color start end =
              L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 1))) $
              L.identity
         in
-         censor (L.Render3DAction xf ro :) (return $ Right (end, color))
+         censor (L.Render3DAction xf ro :) (return $ Right (end, Moving color))
   in
    (smoothstep 0.3 >>> lerpWire >>> movingWire) --> (stationary m color end)
 
@@ -124,6 +132,9 @@ analyzeTiles st = let
 getTile :: Location -> BoardState -> Tile
 getTile (x, y) b = (b V.! (x - 1)) V.! (y - 1)
 
+getTileLogic :: Location -> Board -> TileLogic
+getTileLogic (x, y) b = (b V.! (x - 1)) V.! (y - 1)
+
 updateTileLogic :: Location -> TileLogic -> Board -> Board
 updateTileLogic (x, y) logic board = let
   col = board V.! (x - 1)
@@ -137,8 +148,16 @@ updateBoard m ((x, y), True) (board, st) = let
   (_, leftTile) = getTile (x, y) st
   (_, rightTile) = getTile (x + 1, y) st
 
-  leftLogic = moving m rightTile (x + 1, y) (x, y)
-  rightLogic = moving m leftTile (x, y) (x + 1, y)
+  leftLogic = case rightTile of
+    Stationary color -> moving m color (x + 1, y) (x, y)
+    Moving color -> moving m color (x + 1, y) (x, y)
+    _ -> getTileLogic (x, y) board
+
+  rightLogic = case leftTile of
+    Stationary color -> moving m color (x, y) (x + 1, y)
+    Moving color -> moving m color (x, y) (x + 1, y)
+    _ -> getTileLogic (x + 1, y) board
+
   in
    updateTileLogic (x, y) leftLogic $
    updateTileLogic (x + 1, y) rightLogic board
