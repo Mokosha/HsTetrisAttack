@@ -120,7 +120,7 @@ moving m color start end =
         in
          censor (L.Render3DAction xf ro :) (return $ Right (end, Moving color))
   in
-   (smoothstep gSwapSpeed >>> lerpWire >>> movingWire) --> (stationary m color end)
+   (smoothstep gSwapTime >>> lerpWire >>> movingWire) --> (stationary m color end)
 
 initBoard :: TileMap -> Board
 initBoard m =
@@ -166,11 +166,11 @@ swapTiles m ((x, y), True) st board = let
       (moving m rcolor rightPos leftPos,
        moving m lcolor leftPos rightPos)
     (Blank, Stationary lcolor) ->
-      ((pure (leftPos, Empty) >>> (for gSwapSpeed)) --> (blank leftPos),
+      ((pure (leftPos, Empty) >>> (for gSwapTime)) --> (blank leftPos),
        moving m lcolor leftPos rightPos)
     (Stationary rcolor, Blank) ->
       (moving m rcolor rightPos leftPos,
-       (pure (rightPos, Empty) >>> (for gSwapSpeed)) --> (blank rightPos))
+       (pure (rightPos, Empty) >>> (for gSwapTime)) --> (blank rightPos))
     _ -> (getTileLogic leftPos board, getTileLogic rightPos board)
 
   in
