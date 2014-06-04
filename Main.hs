@@ -36,7 +36,7 @@ data TileColor = Red | Green | Blue | Yellow | Purple
 -- we won't know when the game ends. If we actually keep track of whether or not
 -- the game ends by when we need to advance the blocks then it will only need
 -- to check if blocks exist in the top.
-data TileState = Empty
+data TileState = Blank
                | Stationary TileColor
                | Moving TileColor
 type TileMap = Map.Map TileColor L.RenderObject
@@ -81,6 +81,9 @@ mkCursor loc' = do
         [GLFW.Key'Up, GLFW.Key'Down, GLFW.Key'Left, GLFW.Key'Right, GLFW.Key'Space]
       return (Right (newloc, L.isKeyPressed GLFW.Key'Space ipt), cursor newloc)
 
+blank :: Location -> L.GameWire Float Tile
+blank loc = pure (loc, Blank)
+
 stationary :: TileMap -> TileColor -> Location -> L.GameWire Float Tile
 stationary m color loc =
   let ro = m Map.! color
@@ -119,9 +122,12 @@ moving m color start end =
 initBoard :: TileMap -> Board
 initBoard m =
   V.generate blocksPerRow $ \col ->
-  V.generate (rowsPerBoard - 10) $ \row ->
-  map (flip (stationary m) (col+1, row+1)) [Red, Green, Blue, Yellow, Purple]
-  !! ((row + col) `mod` 5)
+  V.generate rowsPerBoard $ \row ->
+  if row < (rowsPerBoard - 10) then
+    map (flip (stationary m) (col+1, row+1)) [Red, Green, Blue, Yellow, Purple]
+    !! ((row + col) `mod` 5)
+  else
+    blank (col+1, row+1)
 
 analyzeTiles :: BoardState -> GameResult
 analyzeTiles st = let
@@ -142,22 +148,25 @@ updateTileLogic (x, y) logic board = let
   in
    board V.// [((x - 1), newcol)]
 
-updateBoard :: TileMap -> Cursor -> (Board, BoardState) -> Board
-updateBoard _ (_, False) (board, _) = board
-updateBoard m ((x, y), True) (board, st) = let
+swapTiles :: TileMap -> Cursor -> BoardState -> Board -> Board
+swapTiles _ (_, False) _ b = b
+swapTiles m ((x, y), True) st board = let
 
-  (_, leftTile) = getTile (x, y) st
-  (_, rightTile) = getTile (x + 1, y) st
+  leftPos = (x, y)
+  rightPos = (x + 1, y)
+
+  (_, leftTile) = getTile leftPos st
+  (_, rightTile) = getTile rightPos st
 
   swapNonStationary = let
     leftLogic = case rightTile of
-      Stationary color -> moving m color (x + 1, y) (x, y)
-      Moving color -> moving m color (x + 1, y) (x, y)
+      Stationary color -> moving m color rightPos leftPos
+      Moving color -> moving m color rightPos leftPos
       _ -> getTileLogic (x, y) board
 
     rightLogic = case leftTile of
-      Stationary color -> moving m color (x, y) (x + 1, y)
-      Moving color -> moving m color (x, y) (x + 1, y)
+      Stationary color -> moving m color leftPos rightPos
+      Moving color -> moving m color leftPos rightPos
       _ -> getTileLogic (x + 1, y) board
 
     in
@@ -167,16 +176,34 @@ updateBoard m ((x, y), True) (board, st) = let
   swapStationary = let
     (leftLogic, rightLogic) = case (rightTile, leftTile) of
       (Stationary rcolor, Stationary lcolor) ->
-        (moving m rcolor (x + 1, y) (x, y),
-         moving m lcolor (x, y) (x + 1, y))
-      _ -> (getTileLogic (x, y) board, getTileLogic (x + 1, y) board)
+        (moving m rcolor rightPos leftPos,
+         moving m lcolor leftPos rightPos)
+      _ -> (getTileLogic leftPos board, getTileLogic rightPos board)
 
     in
-     updateTileLogic (x, y) leftLogic $
-     updateTileLogic (x + 1, y) rightLogic board
+     updateTileLogic leftPos leftLogic $
+     updateTileLogic rightPos rightLogic board
 
   in
    if bForceStationaryBeforeSwap then swapStationary else swapNonStationary
+
+handleRows :: BoardState -> Board -> Board
+handleRows st board = updateLogic gatheredTiles board
+  where
+    updateLogic :: [(Location, Int)] -> Board -> Board
+    updateLogic [] b = b
+    updateLogic (((x, y), num) : rest) b = updateLogic rest newBoard
+      where
+        removeRow :: V.Vector TileLogic -> V.Vector TileLogic
+        removeRow = flip (V.//) [(y - 1, empty)]
+
+        newBoard = b V.// [(t, removeRow (b V.! t)) | t <- [(x-1-num)..(x-1)]]
+
+    gatheredTiles :: [(Location, Int)]
+    gatheredTiles = [] -- !FIXME!
+
+updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
+updateBoard m c st = (swapTiles m c st) . (handleRows st)
 
 type ColumnCollection = Either () ([Tile], [TileLogic])
 type RowCollection = Either () ([V.Vector Tile], [V.Vector TileLogic])
@@ -225,7 +252,7 @@ mkBoard tmap board' = do
             st = V.fromList $ reverse tiles
             nextBoard = V.fromList $ reverse nextBoard'
             in
-             return $ (Right st, boardLogic $ updateBoard tmap cur (nextBoard, st))
+             return $ (Right st, boardLogic $ updateBoard tmap cur st nextBoard)
           Left _ -> return (Left (), boardLogic board)
 
 data GameResult = GameOver
