@@ -37,6 +37,7 @@ data TileColor = Red | Green | Blue | Yellow | Purple
 -- the game ends by when we need to advance the blocks then it will only need
 -- to check if blocks exist in the top.
 data TileState = Blank
+               | Empty
                | Stationary TileColor
                | Moving TileColor
                  deriving (Eq, Show, Ord, Read)
@@ -180,6 +181,12 @@ swapTiles m ((x, y), True) st board = let
       (Stationary rcolor, Stationary lcolor) ->
         (moving m rcolor rightPos leftPos,
          moving m lcolor leftPos rightPos)
+      (Blank, Stationary lcolor) ->
+        ((pure (leftPos, Empty) >>> (for gSwapSpeed)) --> (blank leftPos),
+         moving m lcolor leftPos rightPos)
+      (Stationary rcolor, Blank) ->
+        (moving m rcolor rightPos leftPos,
+         (pure (rightPos, Empty) >>> (for gSwapSpeed)) --> (blank rightPos))
       _ -> (getTileLogic leftPos board, getTileLogic rightPos board)
 
     in
