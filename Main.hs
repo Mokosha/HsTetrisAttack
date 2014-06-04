@@ -36,10 +36,10 @@ data TileColor = Red | Green | Blue | Yellow | Purple
 -- we won't know when the game ends. If we actually keep track of whether or not
 -- the game ends by when we need to advance the blocks then it will only need
 -- to check if blocks exist in the top.
-data TileState = Blank
-               | Empty
-               | Stationary TileColor
-               | Moving TileColor
+data TileState = Blank -- No tile
+               | Empty -- Recently vacated tile... will become blank soon
+               | Stationary TileColor -- Stationary tile: can be swapped
+               | Moving -- Tile that's been recently swapped
                  deriving (Eq, Show, Ord, Read)
 
 type TileMap = Map.Map TileColor L.RenderObject
@@ -84,43 +84,44 @@ mkCursor loc' = do
         [GLFW.Key'Up, GLFW.Key'Down, GLFW.Key'Left, GLFW.Key'Right, GLFW.Key'Space]
       return (Right (newloc, L.isKeyPressed GLFW.Key'Space ipt), cursor newloc)
 
+renderTile :: L.RenderObject -> V2 Float -> L.GameMonad ()
+renderTile ro (V2 trx try) = let
+  xf = L.translate (V3 trx try $ renderDepth RenderLayer'Tiles) $
+       L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 2))) $
+       L.identity
+  in
+   censor (L.Render3DAction xf ro :) $ return ()
+
 blank :: Location -> L.GameWire Float Tile
 blank loc = pure (loc, Blank)
 
 stationary :: TileMap -> TileColor -> Location -> L.GameWire Float Tile
-stationary m color loc =
-  let ro = m Map.! color
-      (V2 trx try) = blockCenter loc
-      xf = L.translate (V3 trx try $ renderDepth RenderLayer'Tiles) $
-           L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 1))) $
-           L.identity
-  in
-   mkGen_ $ \_ -> censor (L.Render3DAction xf ro :) (return $ Right (loc, Stationary color))
+stationary m color loc = mkGen_ $ \_ -> do
+  renderTile (m Map.! color) (blockCenter loc)
+  return $ Right (loc, Stationary color)
 
 moving :: TileMap -> TileColor -> Location -> Location -> L.GameWire Float Tile
 moving m color start end =
-  let ro = m Map.! color
-      startv = blockCenter start
-      endv = blockCenter end
+  let timer :: Float -> L.GameWire a Float
+      timer duration = (timeF >>>) $
+        mkPure_ $ \t ->
+          if t > duration then
+            Left ()
+          else
+            Right (t / duration)
+
+      smoothstep :: L.GameWire Float Float
+      smoothstep = mkSF_ $ \x -> let x3 = x*x*x in 6*x3*x*x - 15*x3*x + 10*x3
 
       lerpWire :: L.GameWire Float (V2 Float)
-      lerpWire = mkSF_ $ \t -> ((1 - t) *^ startv) + (t *^ endv)
-
-      smoothstep :: Float -> L.GameWire a Float
-      smoothstep duration =
-        timeF >>>
-        (mkPure_ $ \t -> if t > duration then (Left ()) else (Right (t / duration))) >>>
-        (mkSF_ $ \x -> let x3 = x*x*x in 6*x3*x*x - 15*x3*x + 10*x3)
+      lerpWire = mkSF_ $ \t -> lerp t (blockCenter end) (blockCenter start)
 
       movingWire :: L.GameWire (V2 Float) Tile
-      movingWire = mkGen_ $ \(V2 trx try) -> let
-        xf = L.translate (V3 trx try $ renderDepth RenderLayer'Tiles) $
-             L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 1))) $
-             L.identity
-        in
-         censor (L.Render3DAction xf ro :) (return $ Right (end, Moving color))
+      movingWire = mkGen_ $ \pos -> do
+        renderTile (m Map.! color) pos
+        return $ Right (end, Moving)
   in
-   (smoothstep gSwapTime >>> lerpWire >>> movingWire) --> (stationary m color end)
+   (timer gSwapTime >>> smoothstep >>> lerpWire >>> movingWire) --> (stationary m color end)
 
 initBoard :: TileMap -> Board
 initBoard m =
@@ -138,16 +139,13 @@ analyzeTiles st = let
   in
    if (V.any (\vec -> V.any checkTile vec) st) then GameOver else Running
 
-getTile :: Location -> BoardState -> Tile
-getTile (x, y) b = (b V.! (x - 1)) V.! (y - 1)
+get2D :: Location -> V.Vector (V.Vector a) -> a
+get2D (x, y) b = (b V.! (x - 1)) V.! (y - 1)
 
-getTileLogic :: Location -> Board -> TileLogic
-getTileLogic (x, y) b = (b V.! (x - 1)) V.! (y - 1)
-
-updateTileLogic :: Location -> TileLogic -> Board -> Board
-updateTileLogic (x, y) logic board = let
+update2D :: Location -> a -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
+update2D (x, y) val board = let
   col = board V.! (x - 1)
-  newcol = col V.// [((y - 1), logic)]
+  newcol = col V.// [((y - 1), val)]
   in
    board V.// [((x - 1), newcol)]
 
@@ -158,8 +156,8 @@ swapTiles m ((x, y), True) st board = let
   leftPos = (x, y)
   rightPos = (x + 1, y)
 
-  (_, leftTile) = getTile leftPos st
-  (_, rightTile) = getTile rightPos st
+  (_, leftTile) = get2D leftPos st
+  (_, rightTile) = get2D rightPos st
 
   (leftLogic, rightLogic) = case (rightTile, leftTile) of
     (Stationary rcolor, Stationary lcolor) ->
@@ -171,17 +169,17 @@ swapTiles m ((x, y), True) st board = let
     (Stationary rcolor, Blank) ->
       (moving m rcolor rightPos leftPos,
        (pure (rightPos, Empty) >>> (for gSwapTime)) --> (blank rightPos))
-    _ -> (getTileLogic leftPos board, getTileLogic rightPos board)
+    _ -> (get2D leftPos board, get2D rightPos board)
 
   in
-   updateTileLogic leftPos leftLogic $
-   updateTileLogic rightPos rightLogic board
+   update2D leftPos leftLogic $
+   update2D rightPos rightLogic board
 
 removeTiles :: [Location] -> Board -> Board
 removeTiles = flip $ foldr removeTile
   where
     removeTile :: Location -> Board -> Board
-    removeTile loc = updateTileLogic loc (blank loc)
+    removeTile loc = update2D loc (blank loc)
 
 handleRows :: BoardState -> Board -> Board
 handleRows st = removeTiles gatheredTiles
@@ -193,19 +191,20 @@ handleRows st = removeTiles gatheredTiles
         countTilesHelper col accum ts
           | col > blocksPerRow && accum >= 3 = [((blocksPerRow, row), accum)]
           | col > blocksPerRow = []
-          | otherwise = let (_, ts') = getTile (col, row) st
-                            reset = countTilesHelper (col + 1) 1 ts'
-                            dump = ((col - 1, row), accum) : reset
-                            continue = countTilesHelper (col + 1) (accum + 1) ts
-                        in case ts of
-                          (Stationary old) -> case ts' of
-                            (Stationary new)
-                              | old == new -> continue
-                              | accum >= 3 -> dump
-                              | otherwise -> reset
-                            _ | accum >= 3 -> dump
-                              | otherwise -> reset
-                          _ -> reset
+          | otherwise =
+            let (_, ts') = get2D (col, row) st
+                reset = countTilesHelper (col + 1) 1 ts'
+                dump = ((col - 1, row), accum) : reset
+                continue = countTilesHelper (col + 1) (accum + 1) ts
+            in case ts of
+              (Stationary old) -> case ts' of
+                (Stationary new)
+                  | old == new -> continue
+                  | accum >= 3 -> dump
+                  | otherwise -> reset
+                _ | accum >= 3 -> dump
+                  | otherwise -> reset
+              _ -> reset
 
     expandTiles :: (Location, Int) -> [Location]
     expandTiles ((x, y), num) = [(col, y) | col <- [(x-num+1)..x]]
@@ -223,19 +222,20 @@ handleCols st = removeTiles gatheredTiles
         countTilesHelper row accum ts
           | row > rowsPerBoard && accum >= 3 = [((col, row - 1), accum)]
           | row > rowsPerBoard = []
-          | otherwise = let (_, ts') = getTile (col, row) st
-                            reset = countTilesHelper (row + 1) 1 ts'
-                            dump = ((col, row - 1), accum) : reset
-                            continue = countTilesHelper (row + 1) (accum + 1) ts
-                        in case ts of
-                          (Stationary old) -> case ts' of
-                            (Stationary new)
-                              | old == new -> continue
-                              | accum >= 3 -> dump
-                              | otherwise -> reset
-                            _ | accum >= 3 -> dump
-                              | otherwise -> reset
-                          _ -> reset
+          | otherwise =
+            let (_, ts') = get2D (col, row) st
+                reset = countTilesHelper (row + 1) 1 ts'
+                dump = ((col, row - 1), accum) : reset
+                continue = countTilesHelper (row + 1) (accum + 1) ts
+            in case ts of
+              (Stationary old) -> case ts' of
+                (Stationary new)
+                  | old == new -> continue
+                  | accum >= 3 -> dump
+                  | otherwise -> reset
+                _ | accum >= 3 -> dump
+                  | otherwise -> reset
+              _ -> reset
 
     expandTiles :: (Location, Int) -> [Location]
     expandTiles ((x, y), num) = [(x, row) | row <- [(y-num+1)..y]]
