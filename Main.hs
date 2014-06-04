@@ -161,40 +161,22 @@ swapTiles m ((x, y), True) st board = let
   (_, leftTile) = getTile leftPos st
   (_, rightTile) = getTile rightPos st
 
-  swapNonStationary = let
-    leftLogic = case rightTile of
-      Stationary color -> moving m color rightPos leftPos
-      Moving color -> moving m color rightPos leftPos
-      _ -> getTileLogic (x, y) board
-
-    rightLogic = case leftTile of
-      Stationary color -> moving m color leftPos rightPos
-      Moving color -> moving m color leftPos rightPos
-      _ -> getTileLogic (x + 1, y) board
-
-    in
-     updateTileLogic (x, y) leftLogic $
-     updateTileLogic (x + 1, y) rightLogic board
-
-  swapStationary = let
-    (leftLogic, rightLogic) = case (rightTile, leftTile) of
-      (Stationary rcolor, Stationary lcolor) ->
-        (moving m rcolor rightPos leftPos,
-         moving m lcolor leftPos rightPos)
-      (Blank, Stationary lcolor) ->
-        ((pure (leftPos, Empty) >>> (for gSwapSpeed)) --> (blank leftPos),
-         moving m lcolor leftPos rightPos)
-      (Stationary rcolor, Blank) ->
-        (moving m rcolor rightPos leftPos,
-         (pure (rightPos, Empty) >>> (for gSwapSpeed)) --> (blank rightPos))
-      _ -> (getTileLogic leftPos board, getTileLogic rightPos board)
-
-    in
-     updateTileLogic leftPos leftLogic $
-     updateTileLogic rightPos rightLogic board
+  (leftLogic, rightLogic) = case (rightTile, leftTile) of
+    (Stationary rcolor, Stationary lcolor) ->
+      (moving m rcolor rightPos leftPos,
+       moving m lcolor leftPos rightPos)
+    (Blank, Stationary lcolor) ->
+      ((pure (leftPos, Empty) >>> (for gSwapSpeed)) --> (blank leftPos),
+       moving m lcolor leftPos rightPos)
+    (Stationary rcolor, Blank) ->
+      (moving m rcolor rightPos leftPos,
+       (pure (rightPos, Empty) >>> (for gSwapSpeed)) --> (blank rightPos))
+    _ -> (getTileLogic leftPos board, getTileLogic rightPos board)
 
   in
-   if bForceStationaryBeforeSwap then swapStationary else swapNonStationary
+   updateTileLogic leftPos leftLogic $
+   updateTileLogic rightPos rightLogic board
+
 
 handleRows :: BoardState -> Board -> Board
 handleRows st = removeTiles gatheredTiles

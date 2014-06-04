@@ -4,7 +4,7 @@ module TetrisAttack.Constants (
   blockSize, boardSizeX, boardSizeY, boardSizeXf, boardSizeYf, halfBoardSizeXf, halfBoardSizeYf,
   boardOrigin, boardCenter, blockOrigin, blockCenter,
   RenderLayer(..), renderDepth,
-  bForceStationaryBeforeSwap, gSwapSpeed
+  gSwapSpeed
 ) where
 
 --------------------------------------------------------------------------------
@@ -92,9 +92,6 @@ renderDepth RenderLayer'Cursor = (-8)
 --------------------------------------------------------------------------------
 
 -- Gameplay constants
-
-bForceStationaryBeforeSwap :: Bool
-bForceStationaryBeforeSwap = True
 
 gSwapSpeed :: Float
 gSwapSpeed = 0.2
