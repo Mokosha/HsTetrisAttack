@@ -39,6 +39,8 @@ data TileColor = Red | Green | Blue | Yellow | Purple
 data TileState = Blank
                | Stationary TileColor
                | Moving TileColor
+                 deriving (Eq, Show, Ord, Read)
+
 type TileMap = Map.Map TileColor L.RenderObject
 
 type Tile = (Location, TileState)
@@ -188,22 +190,85 @@ swapTiles m ((x, y), True) st board = let
    if bForceStationaryBeforeSwap then swapStationary else swapNonStationary
 
 handleRows :: BoardState -> Board -> Board
-handleRows st board = updateLogic gatheredTiles board
+handleRows st = removeTiles gatheredTiles
   where
-    updateLogic :: [(Location, Int)] -> Board -> Board
-    updateLogic [] b = b
-    updateLogic (((x, y), num) : rest) b = updateLogic rest newBoard
+    removeTiles :: [(Location, Int)] -> Board -> Board
+    removeTiles [] b = b
+    removeTiles (((x, y), num) : rest) b = removeTiles rest newBoard
       where
-        removeRow :: V.Vector TileLogic -> V.Vector TileLogic
-        removeRow = flip (V.//) [(y - 1, empty)]
+        removeRow :: Int -> V.Vector TileLogic -> V.Vector TileLogic
+        removeRow locx = flip (V.//) [(y - 1, blank (locx + 1, y))]
 
-        newBoard = b V.// [(t, removeRow (b V.! t)) | t <- [(x-1-num)..(x-1)]]
+        newBoard = b V.// [(t, removeRow t (b V.! t)) | t <- [(x-num)..(x-1)]]
+
+    countTiles :: Int -> [(Location, Int)]
+    countTiles row = countTilesHelper 1 0 Blank
+      where
+        countTilesHelper :: Int -> Int -> TileState -> [(Location, Int)]
+        countTilesHelper col accum ts
+          | col > blocksPerRow && accum >= 3 = [((blocksPerRow, row), accum)]
+          | col > blocksPerRow = []
+          | otherwise = let (_, ts') = getTile (col, row) st
+                            reset = countTilesHelper (col + 1) 1 ts'
+                            dump = ((col - 1, row), accum) : reset
+                            continue = countTilesHelper (col + 1) (accum + 1) ts
+                        in case ts of
+                          (Stationary old) -> case ts' of
+                            (Stationary new)
+                              | old == new -> continue
+                              | accum >= 3 -> dump
+                              | otherwise -> reset
+                            _ | accum >= 3 -> dump
+                              | otherwise -> reset
+                          _ -> reset
 
     gatheredTiles :: [(Location, Int)]
-    gatheredTiles = [] -- !FIXME!
+    gatheredTiles = do
+      row <- [1..rowsPerBoard]
+      result <- countTiles row
+      return result
+
+handleCols :: BoardState -> Board -> Board
+handleCols st = removeTiles gatheredTiles
+  where
+    removeTiles :: [(Location, Int)] -> Board -> Board
+    removeTiles [] b = b
+    removeTiles (((x, y), num) : rest) b = removeTiles rest newBoard
+      where
+        removeCol :: Int -> V.Vector TileLogic -> V.Vector TileLogic
+        removeCol c = flip (V.//) [(row, blank (x, row + 1)) | row <- [(y-c)..(y-1)]]
+
+        newBoard = b V.// [(x-1, removeCol num (b V.! (x-1)))]
+
+    countTiles :: Int -> [(Location, Int)]
+    countTiles col = countTilesHelper 1 0 Blank
+      where
+        countTilesHelper :: Int -> Int -> TileState -> [(Location, Int)]
+        countTilesHelper row accum ts
+          | row > rowsPerBoard && accum >= 3 = [((col, row - 1), accum)]
+          | row > rowsPerBoard = []
+          | otherwise = let (_, ts') = getTile (col, row) st
+                            reset = countTilesHelper (row + 1) 1 ts'
+                            dump = ((col, row - 1), accum) : reset
+                            continue = countTilesHelper (row + 1) (accum + 1) ts
+                        in case ts of
+                          (Stationary old) -> case ts' of
+                            (Stationary new)
+                              | old == new -> continue
+                              | accum >= 3 -> dump
+                              | otherwise -> reset
+                            _ | accum >= 3 -> dump
+                              | otherwise -> reset
+                          _ -> reset
+
+    gatheredTiles :: [(Location, Int)]
+    gatheredTiles = do
+      col <- [1..blocksPerRow]
+      result <- countTiles col
+      return result
 
 updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
-updateBoard m c st = (swapTiles m c st) . (handleRows st)
+updateBoard m c st = (swapTiles m c st) . (handleCols st) . (handleRows st)
 
 type ColumnCollection = Either () ([Tile], [TileLogic])
 type RowCollection = Either () ([V.Vector Tile], [V.Vector TileLogic])
