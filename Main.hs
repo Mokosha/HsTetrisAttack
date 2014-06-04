@@ -177,19 +177,15 @@ swapTiles m ((x, y), True) st board = let
    updateTileLogic leftPos leftLogic $
    updateTileLogic rightPos rightLogic board
 
+removeTiles :: [Location] -> Board -> Board
+removeTiles = flip $ foldr removeTile
+  where
+    removeTile :: Location -> Board -> Board
+    removeTile loc = updateTileLogic loc (blank loc)
 
 handleRows :: BoardState -> Board -> Board
 handleRows st = removeTiles gatheredTiles
   where
-    removeTiles :: [(Location, Int)] -> Board -> Board
-    removeTiles [] b = b
-    removeTiles (((x, y), num) : rest) b = removeTiles rest newBoard
-      where
-        removeRow :: Int -> V.Vector TileLogic -> V.Vector TileLogic
-        removeRow locx = flip (V.//) [(y - 1, blank (locx + 1, y))]
-
-        newBoard = b V.// [(t, removeRow t (b V.! t)) | t <- [(x-num)..(x-1)]]
-
     countTiles :: Int -> [(Location, Int)]
     countTiles row = countTilesHelper 1 0 Blank
       where
@@ -211,24 +207,15 @@ handleRows st = removeTiles gatheredTiles
                               | otherwise -> reset
                           _ -> reset
 
-    gatheredTiles :: [(Location, Int)]
-    gatheredTiles = do
-      row <- [1..rowsPerBoard]
-      result <- countTiles row
-      return result
+    expandTiles :: (Location, Int) -> [Location]
+    expandTiles ((x, y), num) = [(col, y) | col <- [(x-num+1)..x]]
+
+    gatheredTiles :: [Location]
+    gatheredTiles = [1..rowsPerBoard] >>= countTiles >>= expandTiles
 
 handleCols :: BoardState -> Board -> Board
 handleCols st = removeTiles gatheredTiles
   where
-    removeTiles :: [(Location, Int)] -> Board -> Board
-    removeTiles [] b = b
-    removeTiles (((x, y), num) : rest) b = removeTiles rest newBoard
-      where
-        removeCol :: Int -> V.Vector TileLogic -> V.Vector TileLogic
-        removeCol c = flip (V.//) [(row, blank (x, row + 1)) | row <- [(y-c)..(y-1)]]
-
-        newBoard = b V.// [(x-1, removeCol num (b V.! (x-1)))]
-
     countTiles :: Int -> [(Location, Int)]
     countTiles col = countTilesHelper 1 0 Blank
       where
@@ -250,11 +237,11 @@ handleCols st = removeTiles gatheredTiles
                               | otherwise -> reset
                           _ -> reset
 
-    gatheredTiles :: [(Location, Int)]
-    gatheredTiles = do
-      col <- [1..blocksPerRow]
-      result <- countTiles col
-      return result
+    expandTiles :: (Location, Int) -> [Location]
+    expandTiles ((x, y), num) = [(x, row) | row <- [(y-num+1)..y]]
+
+    gatheredTiles :: [Location]
+    gatheredTiles = [1..blocksPerRow] >>= countTiles >>= expandTiles
 
 updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
 updateBoard m c st = (swapTiles m c st) . (handleCols st) . (handleRows st)
