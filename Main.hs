@@ -142,16 +142,19 @@ analyzeTiles st = let
 get2D :: Location -> V.Vector (V.Vector a) -> a
 get2D (x, y) b = (b V.! (x - 1)) V.! (y - 1)
 
-update2D :: Location -> a -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
-update2D (x, y) val board = let
+update2D :: a -> Location -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
+update2D val (x, y) board = let
   col = board V.! (x - 1)
   newcol = col V.// [((y - 1), val)]
   in
    board V.// [((x - 1), newcol)]
 
-swapTiles :: TileMap -> Cursor -> BoardState -> Board -> Board
-swapTiles _ (_, False) _ b = b
-swapTiles m ((x, y), True) st board = let
+-- bulkUpdate2D :: a -> [Location] -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
+-- bulkUpdate2D val = flip $ foldr (update2D val)
+
+swapTiles :: TileMap -> Cursor -> (BoardState, Board) -> Board
+swapTiles _ (_, False) (_, b) = b
+swapTiles m ((x, y), True) (st, board) = let
 
   leftPos = (x, y)
   rightPos = (x + 1, y)
@@ -172,17 +175,23 @@ swapTiles m ((x, y), True) st board = let
     _ -> (get2D leftPos board, get2D rightPos board)
 
   in
-   update2D leftPos leftLogic $
-   update2D rightPos rightLogic board
+   update2D leftLogic leftPos $
+   update2D rightLogic rightPos board
 
 removeTiles :: [Location] -> Board -> Board
 removeTiles = flip $ foldr removeTile
   where
     removeTile :: Location -> Board -> Board
-    removeTile loc = update2D loc (blank loc)
+    removeTile loc = update2D (blank loc) loc
 
-handleRows :: BoardState -> Board -> Board
-handleRows st = removeTiles gatheredTiles
+removeTileStates :: [Location] -> BoardState -> BoardState
+removeTileStates = flip $ foldr removeTileState
+  where
+    removeTileState :: Location -> BoardState -> BoardState
+    removeTileState loc = update2D (loc, Blank) loc
+
+handleRows :: (BoardState, Board) -> (BoardState, Board)
+handleRows (st, b) = (removeTileStates gatheredTiles st, removeTiles gatheredTiles b)
   where
     countTiles :: Int -> [(Location, Int)]
     countTiles row = countTilesHelper 1 0 Blank
@@ -212,8 +221,8 @@ handleRows st = removeTiles gatheredTiles
     gatheredTiles :: [Location]
     gatheredTiles = [1..rowsPerBoard] >>= countTiles >>= expandTiles
 
-handleCols :: BoardState -> Board -> Board
-handleCols st = removeTiles gatheredTiles
+handleCols :: (BoardState, Board) -> (BoardState, Board)
+handleCols (st, b) = (removeTileStates gatheredTiles st, removeTiles gatheredTiles b)
   where
     countTiles :: Int -> [(Location, Int)]
     countTiles col = countTilesHelper 1 0 Blank
@@ -244,7 +253,7 @@ handleCols st = removeTiles gatheredTiles
     gatheredTiles = [1..blocksPerRow] >>= countTiles >>= expandTiles
 
 updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
-updateBoard m c st = (swapTiles m c st) . (handleCols st) . (handleRows st)
+updateBoard m c st = (swapTiles m c) . handleCols . handleRows . ((,) st)
 
 type ColumnCollection = Either () ([Tile], [TileLogic])
 type RowCollection = Either () ([V.Vector Tile], [V.Vector TileLogic])
