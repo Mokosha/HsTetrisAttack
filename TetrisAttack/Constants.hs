@@ -4,7 +4,7 @@ module TetrisAttack.Constants (
   blockSize, boardSizeX, boardSizeY, boardSizeXf, boardSizeYf, halfBoardSizeXf, halfBoardSizeYf,
   boardOrigin, boardCenter, blockOrigin, blockCenter,
   RenderLayer(..), renderDepth,
-  gSwapTime
+  gSwapTime, gTileFallTime
 ) where
 
 --------------------------------------------------------------------------------
@@ -95,3 +95,6 @@ renderDepth RenderLayer'Cursor = (-8)
 
 gSwapTime :: Float
 gSwapTime = 0.18
+
+gTileFallTime :: Float
+gTileFallTime = 0.1

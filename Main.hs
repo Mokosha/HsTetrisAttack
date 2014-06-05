@@ -36,15 +36,15 @@ data TileColor = Red | Green | Blue | Yellow | Purple
 -- we won't know when the game ends. If we actually keep track of whether or not
 -- the game ends by when we need to advance the blocks then it will only need
 -- to check if blocks exist in the top.
-data TileState = Blank -- No tile
-               | Empty -- Recently vacated tile... will become blank soon
-               | Stationary TileColor -- Stationary tile: can be swapped
-               | Moving -- Tile that's been recently swapped
-                 deriving (Eq, Show, Ord, Read)
+data Tile = Blank -- No tile
+          | Empty -- Recently vacated tile... will become blank soon
+          | Stationary TileColor -- Stationary tile: can be swapped
+          | Moving -- Tile that's been recently swapped
+          | Falling Float -- Tile that's started falling with the amount of time
+                          -- left until it falls
+          deriving (Eq, Show, Ord, Read)
 
 type TileMap = Map.Map TileColor L.RenderObject
-
-type Tile = (Location, TileState)
 type TileLogic = L.GameWire Float Tile
 type Board = V.Vector (V.Vector TileLogic)
 type BoardState = V.Vector (V.Vector Tile)
@@ -92,36 +92,48 @@ renderTile ro (V2 trx try) = let
   in
    censor (L.Render3DAction xf ro :) $ return ()
 
-blank :: Location -> L.GameWire Float Tile
-blank loc = pure (loc, Blank)
+blank :: L.GameWire Float Tile
+blank = pure Blank
 
 stationary :: TileMap -> TileColor -> Location -> L.GameWire Float Tile
 stationary m color loc = mkGen_ $ \_ -> do
   renderTile (m Map.! color) (blockCenter loc)
-  return $ Right (loc, Stationary color)
+  return $ Right $ Stationary color
 
-moving :: TileMap -> TileColor -> Location -> Location -> L.GameWire Float Tile
-moving m color start end =
-  let timer :: Float -> L.GameWire a Float
-      timer duration = (timeF >>>) $
-        mkPure_ $ \t ->
+timer :: Float -> L.GameWire a Float
+timer duration = timeF >>> modTime
+  where modTime = mkPure_ $ \t ->
           if t > duration then
             Left ()
           else
-            Right (t / duration)
+            Right $ 1.0 - (t / duration)
 
-      smoothstep :: L.GameWire Float Float
+moving :: TileMap -> TileColor -> Location -> Location -> L.GameWire Float Tile
+moving m color start end =
+  let smoothstep :: L.GameWire Float Float
       smoothstep = mkSF_ $ \x -> let x3 = x*x*x in 6*x3*x*x - 15*x3*x + 10*x3
 
       lerpWire :: L.GameWire Float (V2 Float)
-      lerpWire = mkSF_ $ \t -> lerp t (blockCenter end) (blockCenter start)
+      lerpWire = mkSF_ $ \t -> lerp t (blockCenter start) (blockCenter end)
 
       movingWire :: L.GameWire (V2 Float) Tile
       movingWire = mkGen_ $ \pos -> do
         renderTile (m Map.! color) pos
-        return $ Right (end, Moving)
+        return $ Right Moving
   in
    (timer gSwapTime >>> smoothstep >>> lerpWire >>> movingWire) --> (stationary m color end)
+
+falling :: TileMap -> TileColor -> Int -> Int -> Int -> L.GameWire Float Tile
+falling m color col start end =
+  let lerpWire :: L.GameWire Float (V2 Float)
+      lerpWire = mkSF_ $ \t -> lerp t (blockCenter (col, start)) (blockCenter (col, end))
+
+      movingWire :: L.GameWire (Float, V2 Float) Tile
+      movingWire = mkGen_ $ \(timeleft, pos) -> do
+        renderTile (m Map.! color) pos
+        return $ Right (Falling timeleft)
+  in
+   (timer (2 * gTileFallTime) >>> (mkId &&& lerpWire) >>> movingWire) --> (stationary m color (col, end)) 
 
 initBoard :: TileMap -> Board
 initBoard m =
@@ -131,13 +143,10 @@ initBoard m =
     map (flip (stationary m) (col+1, row+1)) [Red, Green, Blue, Yellow, Purple]
     !! ((row + col) `mod` 5)
   else
-    blank (col+1, row+1)
+    blank
 
 analyzeTiles :: BoardState -> GameResult
-analyzeTiles st = let
-  checkTile ((_, y), _) =  y > rowsPerBoard
-  in
-   if (V.any (\vec -> V.any checkTile vec) st) then GameOver else Running
+analyzeTiles st = Running -- !FIXME!
 
 get2D :: Location -> V.Vector (V.Vector a) -> a
 get2D (x, y) b = (b V.! (x - 1)) V.! (y - 1)
@@ -149,8 +158,8 @@ update2D val (x, y) board = let
   in
    board V.// [((x - 1), newcol)]
 
--- bulkUpdate2D :: a -> [Location] -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
--- bulkUpdate2D val = flip $ foldr (update2D val)
+bulkUpdate2D :: a -> [Location] -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
+bulkUpdate2D val = flip $ foldr (update2D val)
 
 swapTiles :: TileMap -> Cursor -> (BoardState, Board) -> Board
 swapTiles _ (_, False) (_, b) = b
@@ -159,49 +168,38 @@ swapTiles m ((x, y), True) (st, board) = let
   leftPos = (x, y)
   rightPos = (x + 1, y)
 
-  (_, leftTile) = get2D leftPos st
-  (_, rightTile) = get2D rightPos st
+  leftTile = get2D leftPos st
+  rightTile = get2D rightPos st
 
   (leftLogic, rightLogic) = case (rightTile, leftTile) of
     (Stationary rcolor, Stationary lcolor) ->
       (moving m rcolor rightPos leftPos,
        moving m lcolor leftPos rightPos)
     (Blank, Stationary lcolor) ->
-      ((pure (leftPos, Empty) >>> (for gSwapTime)) --> (blank leftPos),
+      ((pure Empty >>> (for gSwapTime)) --> blank,
        moving m lcolor leftPos rightPos)
     (Stationary rcolor, Blank) ->
       (moving m rcolor rightPos leftPos,
-       (pure (rightPos, Empty) >>> (for gSwapTime)) --> (blank rightPos))
+       ((pure Empty) >>> (for gSwapTime)) --> blank)
     _ -> (get2D leftPos board, get2D rightPos board)
 
   in
    update2D leftLogic leftPos $
    update2D rightLogic rightPos board
 
-removeTiles :: [Location] -> Board -> Board
-removeTiles = flip $ foldr removeTile
-  where
-    removeTile :: Location -> Board -> Board
-    removeTile loc = update2D (blank loc) loc
-
-removeTileStates :: [Location] -> BoardState -> BoardState
-removeTileStates = flip $ foldr removeTileState
-  where
-    removeTileState :: Location -> BoardState -> BoardState
-    removeTileState loc = update2D (loc, Blank) loc
-
 handleRows :: (BoardState, Board) -> (BoardState, Board)
-handleRows (st, b) = (removeTileStates gatheredTiles st, removeTiles gatheredTiles b)
+handleRows (st, b) = (bulkUpdate2D Blank gatheredTiles st,
+                      bulkUpdate2D blank gatheredTiles b)
   where
     countTiles :: Int -> [(Location, Int)]
     countTiles row = countTilesHelper 1 0 Blank
       where
-        countTilesHelper :: Int -> Int -> TileState -> [(Location, Int)]
+        countTilesHelper :: Int -> Int -> Tile -> [(Location, Int)]
         countTilesHelper col accum ts
           | col > blocksPerRow && accum >= 3 = [((blocksPerRow, row), accum)]
           | col > blocksPerRow = []
           | otherwise =
-            let (_, ts') = get2D (col, row) st
+            let ts' = get2D (col, row) st
                 reset = countTilesHelper (col + 1) 1 ts'
                 dump = ((col - 1, row), accum) : reset
                 continue = countTilesHelper (col + 1) (accum + 1) ts
@@ -222,17 +220,18 @@ handleRows (st, b) = (removeTileStates gatheredTiles st, removeTiles gatheredTil
     gatheredTiles = [1..rowsPerBoard] >>= countTiles >>= expandTiles
 
 handleCols :: (BoardState, Board) -> (BoardState, Board)
-handleCols (st, b) = (removeTileStates gatheredTiles st, removeTiles gatheredTiles b)
+handleCols (st, b) = (bulkUpdate2D Blank gatheredTiles st,
+                      bulkUpdate2D blank gatheredTiles b)
   where
     countTiles :: Int -> [(Location, Int)]
     countTiles col = countTilesHelper 1 0 Blank
       where
-        countTilesHelper :: Int -> Int -> TileState -> [(Location, Int)]
+        countTilesHelper :: Int -> Int -> Tile -> [(Location, Int)]
         countTilesHelper row accum ts
           | row > rowsPerBoard && accum >= 3 = [((col, row - 1), accum)]
           | row > rowsPerBoard = []
           | otherwise =
-            let (_, ts') = get2D (col, row) st
+            let ts' = get2D (col, row) st
                 reset = countTilesHelper (row + 1) 1 ts'
                 dump = ((col, row - 1), accum) : reset
                 continue = countTilesHelper (row + 1) (accum + 1) ts
