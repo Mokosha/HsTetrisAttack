@@ -232,18 +232,18 @@ handleGravity :: TileMap -> (BoardState, Board) -> (BoardState, Board)
 handleGravity m (bs, b) = (V.map handleStateCol bs, V.generate blocksPerRow handleLogicCol)
   where
     handleStateCol :: V.Vector Tile -> V.Vector Tile
-    handleStateCol vec = V.fromList $ walkCol 1 False
+    handleStateCol vec = V.fromList $ walkCol 0 False
       where
         walkCol :: Int -> Bool -> [Tile]
         walkCol row isFalling
-          | row == rowsPerBoard && isFalling = [FallingOut]
-          | row == rowsPerBoard = [vec V.! row]
-          | otherwise = let topTile = case vec V.! row of
+          | row == (rowsPerBoard - 1) && isFalling = [FallingOut]
+          | row == (rowsPerBoard - 1) = [vec V.! row]
+          | otherwise = let topTile = case vec V.! (row + 1) of
                               (Stationary c) -> Just (Falling False (fromIntegral blockSize) c)
                               (Falling True x c) -> Just (Falling False (fromIntegral blockSize + x) c)
                               _ -> Nothing
                         in
-                         case vec V.! (row - 1) of
+                         case vec V.! row of
                            Blank -> case topTile of
                              Nothing -> Blank : (walkCol (row + 1) False)
                              Just tile -> tile : (walkCol (row + 1) True)
