@@ -345,7 +345,7 @@ handleCols (st, b) = (bulkUpdate2D Blank gatheredTiles st,
     gatheredTiles = [1..blocksPerRow] >>= countTiles >>= expandTiles
 
 updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
-updateBoard m c st = (swapTiles m c) . (handleGravity m) . handleCols . handleRows . ((,) st)
+updateBoard m c st = (swapTiles m c) . handleCols . handleRows . (handleGravity m) . ((,) st)
 
 type ColumnCollection = Either () ([Tile], [TileLogic])
 type RowCollection = Either () ([V.Vector Tile], [V.Vector TileLogic])
