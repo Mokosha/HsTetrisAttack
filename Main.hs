@@ -32,10 +32,6 @@ type Cursor = (Location, Bool)
 data TileColor = Red | Green | Blue | Yellow | Purple
                deriving (Eq, Show, Ord, Read)
 
--- !FIXME! Right now we have to keep track of tile location because otherwise
--- we won't know when the game ends. If we actually keep track of whether or not
--- the game ends by when we need to advance the blocks then it will only need
--- to check if blocks exist in the top.
 data Tile =
   -- No tile
   Blank
@@ -189,7 +185,9 @@ initBoard m =
     blank
 
 analyzeTiles :: BoardState -> GameResult
-analyzeTiles st = Running -- !FIXME!
+analyzeTiles st
+  | V.any (\v -> v V.! (rowsPerBoard - 1) /= Blank) st = GameOver
+  | otherwise = Running
 
 get2D :: Location -> V.Vector (V.Vector a) -> a
 get2D (x, y) b = (b V.! (x - 1)) V.! (y - 1)
