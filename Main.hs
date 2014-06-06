@@ -21,7 +21,6 @@ import qualified Data.Vector as V
 import qualified Data.Map as Map
 import Data.Word
 
-import qualified Debug.Trace as T
 --------------------------------------------------------------------------------
 
 camera :: L.GameWire a L.Camera
