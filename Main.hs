@@ -142,7 +142,7 @@ falling m color col end =
   let awareTimer :: Float -> L.GameWire a (Bool, Float)
       awareTimer duration = timeF >>> (lastFrame &&& (countToOne duration >>> modTime))
         where
-          modTime = mkSF_ $ \t -> t * t
+          modTime = mkSF_ $ \t -> (t*t*(2-t))
           lastFrame = mkSF $ \dt t -> ((duration - t) < (dtime dt), lastFrame)
 
       lerpWire :: L.GameWire Float (V2 Float)
