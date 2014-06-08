@@ -20,6 +20,7 @@ import TetrisAttack.Constants
 import qualified Data.Vector as V
 import qualified Data.Map as Map
 import Data.Word
+import Data.List (nub)
 
 --------------------------------------------------------------------------------
 
@@ -280,22 +281,22 @@ handleGravity m (bs, b) = (V.map handleStateCol bs, V.generate blocksPerRow hand
                                Just logic -> logic : (walkCol (row + 1) True)
                              | otherwise -> (get2D (col, row) b) : (walkCol (row + 1) False)
 
-handleRows :: (BoardState, Board) -> (BoardState, Board)
-handleRows (st, b) = (bulkUpdate2D Blank gatheredTiles st,
-                      bulkUpdate2D blank gatheredTiles b)
+handleCombos :: (BoardState, Board) -> (BoardState, Board)
+handleCombos (st, b) = (bulkUpdate2D Blank gatheredTiles st,
+                        bulkUpdate2D blank gatheredTiles b)
   where
-    countTiles :: Int -> [(Location, Int)]
-    countTiles row = countTilesHelper 1 0 Blank
+    countRows :: Int -> [(Location, Int)]
+    countRows row = countRowsHelper 1 0 Blank
       where
-        countTilesHelper :: Int -> Int -> Tile -> [(Location, Int)]
-        countTilesHelper col accum ts
+        countRowsHelper :: Int -> Int -> Tile -> [(Location, Int)]
+        countRowsHelper col accum ts
           | col > blocksPerRow && accum >= 3 = [((blocksPerRow, row), accum)]
           | col > blocksPerRow = []
           | otherwise =
             let ts' = get2D (col, row) st
-                reset = countTilesHelper (col + 1) 1 ts'
+                reset = countRowsHelper (col + 1) 1 ts'
                 dump = ((col - 1, row), accum) : reset
-                continue = countTilesHelper (col + 1) (accum + 1) ts
+                continue = countRowsHelper (col + 1) (accum + 1) ts
             in case ts of
               (Stationary old) -> case ts' of
                 (Stationary new)
@@ -306,28 +307,24 @@ handleRows (st, b) = (bulkUpdate2D Blank gatheredTiles st,
                   | otherwise -> reset
               _ -> reset
 
-    expandTiles :: (Location, Int) -> [Location]
-    expandTiles ((x, y), num) = [(col, y) | col <- [(x-num+1)..x]]
+    expandRows :: (Location, Int) -> [Location]
+    expandRows ((x, y), num) = [(col, y) | col <- [(x-num+1)..x]]
 
-    gatheredTiles :: [Location]
-    gatheredTiles = [1..rowsPerBoard] >>= countTiles >>= expandTiles
+    gatheredRows :: [Location]
+    gatheredRows = [1..rowsPerBoard] >>= countRows >>= expandRows
 
-handleCols :: (BoardState, Board) -> (BoardState, Board)
-handleCols (st, b) = (bulkUpdate2D Blank gatheredTiles st,
-                      bulkUpdate2D blank gatheredTiles b)
-  where
-    countTiles :: Int -> [(Location, Int)]
-    countTiles col = countTilesHelper 1 0 Blank
+    countCols :: Int -> [(Location, Int)]
+    countCols col = countColsHelper 1 0 Blank
       where
-        countTilesHelper :: Int -> Int -> Tile -> [(Location, Int)]
-        countTilesHelper row accum ts
+        countColsHelper :: Int -> Int -> Tile -> [(Location, Int)]
+        countColsHelper row accum ts
           | row > rowsPerBoard && accum >= 3 = [((col, row - 1), accum)]
           | row > rowsPerBoard = []
           | otherwise =
             let ts' = get2D (col, row) st
-                reset = countTilesHelper (row + 1) 1 ts'
+                reset = countColsHelper (row + 1) 1 ts'
                 dump = ((col, row - 1), accum) : reset
-                continue = countTilesHelper (row + 1) (accum + 1) ts
+                continue = countColsHelper (row + 1) (accum + 1) ts
             in case ts of
               (Stationary old) -> case ts' of
                 (Stationary new)
@@ -338,14 +335,17 @@ handleCols (st, b) = (bulkUpdate2D Blank gatheredTiles st,
                   | otherwise -> reset
               _ -> reset
 
-    expandTiles :: (Location, Int) -> [Location]
-    expandTiles ((x, y), num) = [(x, row) | row <- [(y-num+1)..y]]
+    expandCols :: (Location, Int) -> [Location]
+    expandCols ((x, y), num) = [(x, row) | row <- [(y-num+1)..y]]
+
+    gatheredCols :: [Location]
+    gatheredCols = [1..blocksPerRow] >>= countCols >>= expandCols
 
     gatheredTiles :: [Location]
-    gatheredTiles = [1..blocksPerRow] >>= countTiles >>= expandTiles
+    gatheredTiles = nub $ gatheredCols ++ gatheredRows
 
 updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
-updateBoard m c st = (swapTiles m c) . handleCols . handleRows . (handleGravity m) . ((,) st)
+updateBoard m c st = (swapTiles m c) . handleCombos . (handleGravity m) . ((,) st)
 
 type ColumnCollection = Either () ([Tile], [TileLogic])
 type RowCollection = Either () ([V.Vector Tile], [V.Vector TileLogic])
