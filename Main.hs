@@ -19,8 +19,8 @@ import TetrisAttack.Constants
 
 import qualified Data.Vector as V
 import qualified Data.Map as Map
-import Data.Word
 import Data.List (nub)
+import Data.Char (toLower)
 
 --------------------------------------------------------------------------------
 
@@ -405,20 +405,14 @@ game :: IO (L.GameWire GameResult GameResult)
 game = let
   tilecolors = [Red, Green, Blue, Yellow, Purple]
 
-  tile2rgb :: TileColor -> (Word8, Word8, Word8, Word8)
-  tile2rgb Red = (200, 0, 0, 255)
-  tile2rgb Green = (67, 128, 67, 255)
-  tile2rgb Blue = (0, 0, 200, 255)
-  tile2rgb Yellow = (180, 180, 0, 255)
-  tile2rgb Purple = (0, 180, 180, 255)
-
-  loadColor :: (Word8, Word8, Word8, Word8) -> IO (L.RenderObject)
+  loadColor :: TileColor -> IO (L.RenderObject)
   loadColor color = do
-    tex <- L.createSolidTexture color
+    let filename = concat ["element_", map toLower $ show color, "_square" <.> "png"]
+    (Just tex) <- getDataFileName filename >>= L.loadTextureFromPNG
     L.createRenderObject L.quad (L.createTexturedMaterial tex)
   in
    do
-     ros <- mapM (loadColor . tile2rgb) tilecolors
+     ros <- mapM loadColor tilecolors
      let tmap = Map.fromList $ zip tilecolors ros
      board <- mkBoard tmap $ initBoard tmap
      cursor <- mkCursor boardCenter

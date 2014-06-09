@@ -16,6 +16,11 @@ build-type:          Simple
 cabal-version:       >=1.10
 data-dir:            Assets
 data-files:          cursor.png
+                     element_blue_square.png
+                     element_green_square.png
+                     element_purple_square.png
+                     element_red_square.png
+                     element_yellow_square.png
 
 executable TetrisAttack
   main-is:        Main.hs
