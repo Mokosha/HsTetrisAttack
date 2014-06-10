@@ -97,7 +97,7 @@ gSwapTime :: Float
 gSwapTime = 0.18
 
 gTileFallTime :: Float
-gTileFallTime = 0.15
+gTileFallTime = 0.035
 
 gTileFallSpeed :: Float
 gTileFallSpeed = (fromIntegral blockSize) / gTileFallTime

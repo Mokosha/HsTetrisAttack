@@ -223,6 +223,15 @@ swapTiles m ((x, y), True) (st, board) = let
     (Stationary rcolor, Blank) ->
       (moving m rcolor rightPos leftPos,
        ((pure SwappedOut) >>> (for gSwapTime)) --> blank)
+    (Falling True _ rcolor, Falling True _ lcolor) ->
+      (moving m rcolor rightPos leftPos,
+       moving m lcolor leftPos rightPos)
+    (Blank, Falling True _ lcolor) ->
+      ((pure SwappedOut >>> (for gSwapTime)) --> blank,
+       moving m lcolor leftPos rightPos)
+    (Falling True _ rcolor, Blank) ->
+      (moving m rcolor rightPos leftPos,
+       ((pure SwappedOut) >>> (for gSwapTime)) --> blank)
     _ -> (get2D leftPos board, get2D rightPos board)
 
   in
@@ -240,8 +249,10 @@ handleGravity m (bs, b) = (V.map handleStateCol bs, V.generate blocksPerRow hand
           | row == (rowsPerBoard - 1) && isFalling = [FallingOut]
           | row == (rowsPerBoard - 1) = [vec V.! row]
           | otherwise = let topTile = case vec V.! (row + 1) of
-                              (Stationary c) -> Just (Falling False (fromIntegral blockSize) c)
-                              (Falling True x c) -> Just (Falling False (fromIntegral blockSize + x) c)
+                              (Stationary c) ->
+                                Just (Falling False (fromIntegral blockSize) c)
+                              (Falling True x c) ->
+                                Just (Falling False (fromIntegral blockSize + x) c)
                               _ -> Nothing
                         in
                          case vec V.! row of
