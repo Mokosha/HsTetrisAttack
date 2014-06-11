@@ -25,6 +25,9 @@ data-files:          cursor.png
 executable TetrisAttack
   main-is:        Main.hs
   other-modules:  TetrisAttack.Constants
+                  TetrisAttack.Tile
+                  TetrisAttack.Board
+                  TetrisAttack.Cursor
   ghc-options:    -Wall -rtsopts
   build-depends:  base > 4.6,
                   GLFW-b,
