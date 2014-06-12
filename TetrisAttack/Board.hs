@@ -52,25 +52,27 @@ swapTiles m ((x, y), True) (st, board) = let
   leftTile = get2D leftPos st
   rightTile = get2D rightPos st
 
+  swappingWire = (pure SwappedOut >>> (for $ gSwapDelay)) --> blank
+
   (leftLogic, rightLogic) = case (rightTile, leftTile) of
     (Stationary rcolor, Stationary lcolor) ->
       (moving m rcolor rightPos leftPos,
        moving m lcolor leftPos rightPos)
     (Blank, Stationary lcolor) ->
-      ((pure SwappedOut >>> (for gSwapTime)) --> blank,
+      (swappingWire,
        moving m lcolor leftPos rightPos)
     (Stationary rcolor, Blank) ->
       (moving m rcolor rightPos leftPos,
-       ((pure SwappedOut) >>> (for gSwapTime)) --> blank)
+       swappingWire)
     (Falling True _ rcolor, Falling True _ lcolor) ->
       (moving m rcolor rightPos leftPos,
        moving m lcolor leftPos rightPos)
     (Blank, Falling True _ lcolor) ->
-      ((pure SwappedOut >>> (for gSwapTime)) --> blank,
+      (swappingWire,
        moving m lcolor leftPos rightPos)
     (Falling True _ rcolor, Blank) ->
       (moving m rcolor rightPos leftPos,
-       ((pure SwappedOut) >>> (for gSwapTime)) --> blank)
+       swappingWire)
     _ -> (get2D leftPos board, get2D rightPos board)
 
   in
