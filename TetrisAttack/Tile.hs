@@ -80,14 +80,14 @@ stationary m color loc = mkGen_ $ \_ -> do
   return $ Right $ Stationary color
 
 countFromOne :: Float -> L.GameWire Float Float
-countFromOne end = mkPure_ $ \t ->
+countFromOne end = (countToOne end) >>> (mkSF_ (1.0 -))
+
+countToOne :: Float -> L.GameWire Float Float
+countToOne end = mkPure_ $ \t ->
   if t > end then
     Left ()
   else
-    Right $ 1.0 - (t / end)
-
-countToOne :: Float -> L.GameWire Float Float
-countToOne end = (countFromOne end) >>> (mkSF_ (1.0 -))
+    Right $ t / end
 
 timer :: Float -> L.GameWire a Float
 timer duration = timeF >>> (countFromOne duration)
