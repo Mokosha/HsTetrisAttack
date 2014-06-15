@@ -4,7 +4,7 @@ module TetrisAttack.Constants (
   blockSize, boardSizeX, boardSizeY, boardSizeXf, boardSizeYf, halfBoardSizeXf, halfBoardSizeYf,
   boardOrigin, boardCenter, blockOrigin, blockCenter,
   RenderLayer(..), renderDepth,
-  gSwapTime, gSwapDelay, gTileFallTime, gTileFallSpeed
+  gSwapTime, gSwapDelay, gTileFallTime, gTileFallSpeed, gVanishTime
 ) where
 
 --------------------------------------------------------------------------------
@@ -104,3 +104,6 @@ gTileFallTime = 0.035
 
 gTileFallSpeed :: Float
 gTileFallSpeed = (fromIntegral blockSize) / gTileFallTime
+
+gVanishTime :: Float
+gVanishTime = 0.35

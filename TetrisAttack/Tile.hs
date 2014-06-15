@@ -1,7 +1,7 @@
 module TetrisAttack.Tile (
   TileColor(..), Tile(..), TileMap, TileLogic,
   loadTiles,
-  renderTile, blank, stationary, moving, falling, stillFalling
+  renderTile, blank, stationary, moving, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
 import Control.Monad.RWS.Strict hiding (when)
@@ -25,6 +25,9 @@ data TileColor = Red | Green | Blue | Yellow | Purple
 data Tile =
   -- No tile
   Blank
+
+  -- Tile has been removed recently... will be blank soon
+  | Vanishing
 
   -- Tile that's been recently swapped into a new location
   | Moving
@@ -140,3 +143,18 @@ stillFalling m color offset col end =
         return $ Right (Falling lastFrame yoff color)
   in
    (reduce (fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color (col, end))
+
+vanishing :: TileMap -> TileColor -> Location -> L.GameWire Float Tile
+vanishing m color loc = let
+  alpha :: L.GameWire a Float
+  alpha = timer gVanishTime
+
+  render :: L.GameWire (Float, Float) Tile
+  render = mkGen_ $ \(a, _) -> let
+    setAlpha ro = ro { L.material = Map.insert "alpha" (L.FloatVal a) (L.material ro) }
+    in do
+      renderTile (setAlpha $ m Map.! color) (blockCenter loc)
+      return $ Right Vanishing
+
+  in
+   ((alpha &&& mkId) >>> render) --> (blank)
