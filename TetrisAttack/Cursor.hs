@@ -19,11 +19,14 @@ import TetrisAttack.Constants
 type Location = (Int, Int)
 type Cursor = (Location, Bool)
 
+setTrans :: L.RenderObject -> L.RenderObject
+setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
+
 mkCursor :: Location -> IO (L.GameWire Float Cursor)
 mkCursor loc' = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTextureFromPNG
   ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
-  return (cursor loc' >>> (cursorRenderer ro))
+  return (cursor loc' >>> (cursorRenderer $ setTrans ro))
   where
     cursorRenderer :: L.RenderObject -> L.GameWire Cursor Cursor
     cursorRenderer ro = mkGen_ $ \c@((curx, cury), _) -> do

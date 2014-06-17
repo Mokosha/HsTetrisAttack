@@ -151,7 +151,8 @@ vanishing m color loc = let
 
   render :: L.GameWire (Float, Float) Tile
   render = mkGen_ $ \(a, _) -> let
-    setAlpha ro = ro { L.material = Map.insert "alpha" (L.FloatVal a) (L.material ro) }
+    setAlpha ro = ro { L.material = Map.insert "alpha" (L.FloatVal a) (L.material ro),
+                       L.flags = L.Transparent : (L.flags ro) }
     in do
       renderTile (setAlpha $ m Map.! color) (blockCenter loc)
       return $ Right Vanishing
