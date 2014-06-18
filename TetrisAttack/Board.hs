@@ -135,11 +135,14 @@ handleGravity m (bs, b) = (V.map handleStateCol bs, V.generate blocksPerRow hand
 
 type Combo = (Location, TileColor)
 handleCombos :: TileMap -> (BoardState, Board) -> (BoardState, Board)
-handleCombos m (st, b) = (bulkUpdate2D Vanishing (map fst gatheredTiles) st,
+handleCombos m (st, b) = (bulkUpdate2D Vanishing (map (fst.fst) gatheredTiles) st,
                           foldr updateLogic b gatheredTiles)
   where
-    updateLogic :: Combo -> Board -> Board
-    updateLogic (loc, color) = update2D (vanishing m color loc) loc
+    vanishingDelay :: Float
+    vanishingDelay = gVanishTime * 0.5
+
+    updateLogic :: (Combo, Float) -> Board -> Board
+    updateLogic ((loc, color), delayTime) = update2D (vanishing delayTime m color loc) loc
 
     countRows :: Int -> [(Combo, Int)]
     countRows row = countRowsHelper 1 0 Blank
@@ -166,10 +169,11 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map fst gatheredTiles) st,
                   | otherwise -> reset
               _ -> reset
 
-    expandRows :: (Combo, Int) -> [Combo]
-    expandRows (((x, y), color), num) = [((col, y), color) | col <- [(x-num+1)..x]]
+    expandRows :: (Combo, Int) -> [(Combo, Float)]
+    expandRows (((x, y), color), num) =
+      zip [((col, y), color) | col <- [(x-num+1)..x]] [0.0,vanishingDelay..]
 
-    gatheredRows :: [Combo]
+    gatheredRows :: [(Combo, Float)]
     gatheredRows = [1..rowsPerBoard] >>= countRows >>= expandRows
 
     countCols :: Int -> [(Combo, Int)]
@@ -197,13 +201,14 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map fst gatheredTiles) st,
                   | otherwise -> reset
               _ -> reset
 
-    expandCols :: (Combo, Int) -> [Combo]
-    expandCols (((x, y), c), num) = [((x, row), c) | row <- [(y-num+1)..y]]
+    expandCols :: (Combo, Int) -> [(Combo, Float)]
+    expandCols (((x, y), c), num) =
+      zip [((x, row), c) | row <- [(y-num+1)..y]] [0.0,vanishingDelay..]
 
-    gatheredCols :: [Combo]
+    gatheredCols :: [(Combo, Float)]
     gatheredCols = [1..blocksPerRow] >>= countCols >>= expandCols
 
-    gatheredTiles :: [Combo]
+    gatheredTiles :: [(Combo, Float)]
     gatheredTiles = nub $ gatheredCols ++ gatheredRows
 
 updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board

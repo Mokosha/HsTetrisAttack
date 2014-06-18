@@ -144,8 +144,8 @@ stillFalling m color offset col end =
   in
    (reduce (fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color (col, end))
 
-vanishing :: TileMap -> TileColor -> Location -> L.GameWire Float Tile
-vanishing m color loc = let
+vanishing :: Float -> TileMap -> TileColor -> Location -> L.GameWire Float Tile
+vanishing delayTime m color loc = let
   alpha :: L.GameWire a Float
   alpha = timer gVanishTime
 
@@ -158,4 +158,6 @@ vanishing m color loc = let
       return $ Right Vanishing
 
   in
-   ((alpha &&& mkId) >>> render) --> (blank)
+   ((timer delayTime >>> pure 1.0) &&& mkId >>> render) -->
+   ((alpha &&& mkId) >>> render) -->
+   blank
