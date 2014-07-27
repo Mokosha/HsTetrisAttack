@@ -132,69 +132,62 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map (fst.fst) gatheredTiles) s
     updateLogic :: (Combo, Float) -> Board -> Board
     updateLogic ((loc, color), delayTime) = update2D (vanishing delayTime m color loc) loc
 
-    countRows :: Int -> [(Combo, Int)]
-    countRows row = countRowsHelper 1 0 Blank
-      where
-        countRowsHelper :: Int -> Int -> Tile -> [(Combo, Int)]
-        countRowsHelper col accum ts
-          | col > blocksPerRow && accum >= 3 =
-            case ts of
-              (Stationary c) -> [(((blocksPerRow, row), c), accum)]
-              _ -> error "This shouldn't happen"
-          | col > blocksPerRow = []
-          | otherwise =
-            let ts' = get2D (col, row) st
-                reset = countRowsHelper (col + 1) 1 ts'
-                dump c = (((col - 1, row), c), accum) : reset
-                continue = countRowsHelper (col + 1) (accum + 1) ts
-            in case ts of
-              (Stationary old) -> case ts' of
-                (Stationary new)
-                  | old == new -> continue
-                  | accum >= 3 -> dump old
-                  | otherwise -> reset
-                _ | accum >= 3 -> dump old
-                  | otherwise -> reset
-              _ -> reset
+    countWalker :: GridWalker Tile [(Int, TileColor, Int)]
+    countWalker = countHelper 0 1 Blank []
+      where 
+        countHelper :: Int -> Int -> Tile -> [(Int, TileColor, Int)] ->
+                       GridWalker Tile [(Int, TileColor, Int)]
+        countHelper pos cnt tile combos = Walker walkerFn
+          where
+            dump :: Tile -> TileColor -> GridWalker Tile [(Int, TileColor, Int)]
+            dump t c = countHelper (pos + 1) 1 t ((pos, c, cnt) : combos)
+
+            reset :: Tile -> GridWalker Tile [(Int, TileColor, Int)]
+            reset t = countHelper (pos + 1) 1 t combos
+
+            walkerFn :: Maybe Tile -> GridWalker Tile [(Int, TileColor, Int)]
+            walkerFn Nothing
+              | cnt >= 3 = case tile of
+                (Stationary old) -> Result $ (pos, old, cnt) : combos
+                _ -> error "handleCombos -- The impossible happened"
+              | otherwise = Result $ combos
+
+            walkerFn (Just (Stationary new)) =
+              case tile of
+                (Stationary old)
+                  | old == new -> countHelper (pos + 1) (cnt + 1) (Stationary new) combos
+                  | cnt >= 3 -> dump (Stationary new) old
+                  | otherwise -> reset (Stationary new)
+                _ -> reset (Stationary new)
+
+            walkerFn (Just t)
+              | cnt >= 3 =
+                case tile of
+                  (Stationary old) -> dump t old
+                  _ -> reset t
+              | otherwise = reset t
+
+    mkRowCombo :: [(Int, TileColor, Int)] -> Int -> [(Combo, Int)]
+    mkRowCombo l col = map (\(row, t, n) -> (((row, col), t), n)) l
+
+    mkColCombo :: [(Int, TileColor, Int)] -> Int -> [(Combo, Int)]
+    mkColCombo l row = map (\(col, t, n) -> (((row, col), t), n)) l
 
     expandRows :: (Combo, Int) -> [(Combo, Float)]
     expandRows (((x, y), color), num) =
       zip [((col, y), color) | col <- [(x-num+1)..x]] [0.0,vanishingDelay..]
 
     gatheredRows :: [(Combo, Float)]
-    gatheredRows = [1..rowsPerBoard] >>= countRows >>= expandRows
-
-    countCols :: Int -> [(Combo, Int)]
-    countCols col = countColsHelper 1 0 Blank
-      where
-        countColsHelper :: Int -> Int -> Tile -> [(Combo, Int)]
-        countColsHelper row accum ts
-          | row > rowsPerBoard && accum >= 3 =
-            case ts of
-              (Stationary c) -> [(((col, row - 1), c), accum)]
-              _ -> error "This shouldn't happen"
-          | row > rowsPerBoard = []
-          | otherwise =
-            let ts' = get2D (col, row) st
-                reset = countColsHelper (row + 1) 1 ts'
-                dump c = (((col, row - 1), c), accum) : reset
-                continue = countColsHelper (row + 1) (accum + 1) ts
-            in case ts of
-              (Stationary old) -> case ts' of
-                (Stationary new)
-                  | old == new -> continue
-                  | accum >= 3 -> dump old
-                  | otherwise -> reset
-                _ | accum >= 3 -> dump old
-                  | otherwise -> reset
-              _ -> reset
+    gatheredRows =
+      (concat $ zipWith mkRowCombo (walkRows st countWalker) [1..rowsPerBoard]) >>= expandRows
 
     expandCols :: (Combo, Int) -> [(Combo, Float)]
     expandCols (((x, y), c), num) =
       zip [((x, row), c) | row <- [(y-num+1)..y]] [0.0,vanishingDelay..]
 
     gatheredCols :: [(Combo, Float)]
-    gatheredCols = [1..blocksPerRow] >>= countCols >>= expandCols
+    gatheredCols =
+      (concat $ zipWith mkColCombo (walkColumns st countWalker) [1..blocksPerRow]) >>= expandCols
 
     gatheredTiles :: [(Combo, Float)]
     gatheredTiles = nub $ gatheredCols ++ gatheredRows
