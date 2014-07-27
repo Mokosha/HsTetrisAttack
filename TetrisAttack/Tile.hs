@@ -16,7 +16,7 @@ import System.FilePath
 
 import Paths_TetrisAttack
 import TetrisAttack.Constants
-import TetrisAttack.Cursor
+import TetrisAttack.Grid
 --------------------------------------------------------------------------------
 
 data TileColor = Red | Green | Blue | Yellow | Purple
@@ -74,7 +74,7 @@ renderTile ro (V2 trx try) = let
 blank :: L.GameWire Float Tile
 blank = pure Blank
 
-stationary :: TileMap -> TileColor -> Location -> L.GameWire Float Tile
+stationary :: TileMap -> TileColor -> GridLocation2D -> L.GameWire Float Tile
 stationary m color loc = mkGen_ $ \_ -> do
   renderTile (m Map.! color) (blockCenter loc)
   return $ Right $ Stationary color
@@ -92,7 +92,7 @@ countToOne end = mkPure_ $ \t ->
 timer :: Float -> L.GameWire a Float
 timer duration = timeF >>> (countFromOne duration)
 
-moving :: TileMap -> TileColor -> Location -> Location -> L.GameWire Float Tile
+moving :: TileMap -> TileColor -> GridLocation2D -> GridLocation2D -> L.GameWire Float Tile
 moving m color start end =
   let smoothstep :: L.GameWire Float Float
       smoothstep = mkSF_ $ \x -> let x3 = x*x*x in 6*x3*x*x - 15*x3*x + 10*x3
@@ -144,7 +144,7 @@ stillFalling m color offset col end =
   in
    (reduce (fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color (col, end))
 
-vanishing :: Float -> TileMap -> TileColor -> Location -> L.GameWire Float Tile
+vanishing :: Float -> TileMap -> TileColor -> GridLocation2D -> L.GameWire Float Tile
 vanishing delayTime m color loc = let
   alpha :: L.GameWire a Float
   alpha = timer gVanishTime

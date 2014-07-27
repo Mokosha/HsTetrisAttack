@@ -1,5 +1,5 @@
 module TetrisAttack.Cursor (
-  Location, Cursor, mkCursor
+  Cursor, mkCursor
 ) where
 
 --------------------------------------------------------------------------------
@@ -14,15 +14,15 @@ import System.FilePath
 
 import Paths_TetrisAttack
 import TetrisAttack.Constants
+import TetrisAttack.Grid
 --------------------------------------------------------------------------------
 
-type Location = (Int, Int)
-type Cursor = (Location, Bool)
+type Cursor = (GridLocation2D, Bool)
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
 
-mkCursor :: Location -> IO (L.GameWire Float Cursor)
+mkCursor :: GridLocation2D -> IO (L.GameWire Float Cursor)
 mkCursor loc' = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTextureFromPNG
   ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
@@ -41,7 +41,7 @@ mkCursor loc' = do
       censor (L.Render3DAction xf ro :) $
         return (Right c)
       
-    cursor :: Location -> L.GameWire Float Cursor
+    cursor :: GridLocation2D -> L.GameWire Float Cursor
     cursor oldloc = mkGenN $ \_ -> do
       ipt <- get
       let mapFst f (a, b) = (f a, b)

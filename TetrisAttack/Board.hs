@@ -13,11 +13,12 @@ import Linear.V3
 
 import TetrisAttack.Constants
 import TetrisAttack.Cursor
+import TetrisAttack.Grid
 import TetrisAttack.Tile
 --------------------------------------------------------------------------------
 
-type Board = V.Vector (V.Vector TileLogic)
-type BoardState = V.Vector (V.Vector Tile)
+type Board = Grid2D TileLogic
+type BoardState = Grid2D Tile
 
 initBoard :: TileMap -> Board
 initBoard m =
@@ -28,19 +29,6 @@ initBoard m =
     !! ((row + col) `mod` 5)
   else
     blank
-
-get2D :: Location -> V.Vector (V.Vector a) -> a
-get2D (x, y) b = (b V.! (x - 1)) V.! (y - 1)
-
-update2D :: a -> Location -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
-update2D val (x, y) board = let
-  col = board V.! (x - 1)
-  newcol = col V.// [((y - 1), val)]
-  in
-   board V.// [((x - 1), newcol)]
-
-bulkUpdate2D :: a -> [Location] -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
-bulkUpdate2D val = flip $ foldr (update2D val)
 
 swapTiles :: TileMap -> Cursor -> (BoardState, Board) -> Board
 swapTiles _ (_, False) (_, b) = b
@@ -133,7 +121,7 @@ handleGravity m (bs, b) = (V.map handleStateCol bs, V.generate blocksPerRow hand
                                Just logic -> logic : (walkCol (row + 1) True)
                              | otherwise -> (get2D (col, row) b) : (walkCol (row + 1) False)
 
-type Combo = (Location, TileColor)
+type Combo = (GridLocation2D, TileColor)
 handleCombos :: TileMap -> (BoardState, Board) -> (BoardState, Board)
 handleCombos m (st, b) = (bulkUpdate2D Vanishing (map (fst.fst) gatheredTiles) st,
                           foldr updateLogic b gatheredTiles)
