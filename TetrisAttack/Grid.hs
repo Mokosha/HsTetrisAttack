@@ -3,7 +3,8 @@ module TetrisAttack.Grid (
   get2D, update2D, bulkUpdate2D,
   GridWalker(..),
   walkRows, walkColumns,
-  mapGrid, mapGridM, mapGridM_, unzipGrid
+  mapGrid, mapGridM, mapGridM_, unzipGrid,
+  GridUpdater(..), updateColumns
 ) where
 
 --------------------------------------------------------------------------------
@@ -11,6 +12,16 @@ module TetrisAttack.Grid (
 import qualified Data.Vector as V
 
 --------------------------------------------------------------------------------
+
+statefulScanl :: (a -> b -> (c, a)) -> a -> V.Vector b -> V.Vector c
+statefulScanl f start v = let
+   stepElement [] _ = []
+   stepElement (x : xs) stepper = let
+     (result, next) = f stepper x
+     in
+      result : (stepElement xs next)
+  in
+   V.fromList $ stepElement (V.toList v) start
 
 type Grid2D a = V.Vector (V.Vector a)
 type GridLocation2D = (Int, Int)
@@ -29,10 +40,10 @@ mapGridM_ f g = do
 unzipGrid :: Grid2D (b, c) -> (Grid2D b, Grid2D c)
 unzipGrid = V.unzip . (V.map V.unzip)
 
-get2D :: GridLocation2D -> V.Vector (V.Vector a) -> a
+get2D :: GridLocation2D -> Grid2D a -> a
 get2D (x, y) b = (b V.! (x - 1)) V.! (y - 1)
 
-update2D :: a -> GridLocation2D -> V.Vector (V.Vector a) -> V.Vector (V.Vector a)
+update2D :: a -> GridLocation2D -> Grid2D a -> Grid2D a
 update2D val (x, y) board = let
   col = board V.! (x - 1)
   newcol = col V.// [((y - 1), val)]
@@ -64,3 +75,9 @@ walkRows grid walker
 
 walkColumns :: Grid2D a -> GridWalker a b -> [b]
 walkColumns grid walker = V.toList $ V.map (finishWalker . (V.foldl' stepWalker walker)) grid
+
+newtype GridUpdater a b = GridUpdater { updateGridValue :: a -> (b, GridUpdater a b) }
+
+updateColumns :: GridUpdater a b -> Grid2D a -> Grid2D b
+updateColumns updater = V.map updateColumn
+  where updateColumn = statefulScanl updateGridValue updater
