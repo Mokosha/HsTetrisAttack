@@ -3,6 +3,7 @@ module TetrisAttack.Grid (
   get2D, update2D, bulkUpdate2D,
   GridWalker(..),
   walkRows, walkColumns,
+  mapGrid, mapGridM, mapGridM_, unzipGrid
 ) where
 
 --------------------------------------------------------------------------------
@@ -13,6 +14,20 @@ import qualified Data.Vector as V
 
 type Grid2D a = V.Vector (V.Vector a)
 type GridLocation2D = (Int, Int)
+
+mapGrid :: (a -> b) -> Grid2D a -> Grid2D b
+mapGrid f = V.map (\v -> V.map f v)
+
+mapGridM :: Monad m => (a -> m b) -> Grid2D a -> m (Grid2D b)
+mapGridM f = V.mapM (\v -> V.mapM f v)
+
+mapGridM_ :: Monad m => (a -> m b) -> Grid2D a -> m ()
+mapGridM_ f g = do
+  _ <- mapGridM f g
+  return ()
+
+unzipGrid :: Grid2D (b, c) -> (Grid2D b, Grid2D c)
+unzipGrid = V.unzip . (V.map V.unzip)
 
 get2D :: GridLocation2D -> V.Vector (V.Vector a) -> a
 get2D (x, y) b = (b V.! (x - 1)) V.! (y - 1)

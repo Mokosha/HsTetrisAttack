@@ -195,9 +195,6 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map (fst.fst) gatheredTiles) s
 updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
 updateBoard m c st = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((,) st)
 
-type ColumnCollection = Either () ([Tile], [TileLogic])
-type RowCollection = Either () ([V.Vector Tile], [V.Vector TileLogic])
-
 mkBoard :: TileMap -> Board -> IO (L.GameWire Cursor BoardState)
 mkBoard tmap board' = do
 --  (Just bgTex) <- getDataFileName ("background" <.> "png") >>= L.loadTextureFromPNG
@@ -216,31 +213,18 @@ mkBoard tmap board' = do
 
     boardLogic :: Board -> L.GameWire Cursor BoardState
     boardLogic board = let
+      stepTileLogic :: L.TimeStep -> Float -> TileLogic -> L.GameMonad (Either () Tile, TileLogic)
+      stepTileLogic ts up logic = stepWire logic ts (Right up)
 
-      collectCol :: L.TimeStep -> ColumnCollection -> TileLogic -> L.GameMonad ColumnCollection
-      collectCol _ (Left _) _ = return $ Left ()
-      collectCol timestep (Right (ts, wires)) wire = do
-        (newTile, newWire) <- stepWire wire timestep (Right 0)
-        case newTile of
-          Right tile -> return $ Right (tile : ts, newWire : wires)
-          Left _ -> return $ Left ()
-
-      collectRow :: L.TimeStep -> RowCollection -> (V.Vector TileLogic) ->
-                    L.GameMonad RowCollection
-      collectRow _ (Left _) _ = return $ Left ()
-      collectRow timestep (Right (ts, logic)) col = do
-        result <- V.foldM (collectCol timestep) (Right ([], [])) col
-        case result of
-          Right (tiles, wires) -> return $ Right (V.fromList (reverse tiles) : ts,
-                                                  V.fromList (reverse wires) : logic)
-          Left _ -> return $ Left ()
-     in
-      mkGen $ \timestep cur -> do
-        result <- V.foldM (collectRow timestep) (Right ([], [])) board
-        case result of
-          Right (tiles, nextBoard') -> let
-            st = V.fromList $ reverse tiles
-            nextBoard = V.fromList $ reverse nextBoard'
-            in
-             return $ (Right st, boardLogic $ updateBoard tmap cur st nextBoard)
-          Left _ -> return (Left (), boardLogic board)
+      inhibitGrid :: Grid2D (Either () Tile) -> Either () (Grid2D Tile)
+      inhibitGrid grid
+        | V.any (\v -> V.any (\x -> x == Left ()) v) grid = Left ()
+        | otherwise = Right $ mapGrid (\(Right t) -> t) grid
+      in
+       mkGen $ \timestep cur -> do
+         resGrid <- mapGridM (stepTileLogic timestep 0.0) board
+         let (tiles', logic) = unzipGrid resGrid
+             tiles = inhibitGrid tiles'
+         case tiles of
+           Right st -> return (Right st, boardLogic $ updateBoard tmap cur st logic)
+           Left _ -> return (Left (), boardLogic board)
