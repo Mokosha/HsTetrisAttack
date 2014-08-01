@@ -3,7 +3,7 @@ module TetrisAttack.Grid (
   get2D, update2D, bulkUpdate2D,
   GridWalker(..),
   walkRows, walkColumns,
-  mapGrid, mapGridM, mapGridM_, unzipGrid,
+  mapGrid, mapGridM, mapGridM_, zipGrid, unzipGrid,
   GridUpdater(..), updateColumns
 ) where
 
@@ -36,6 +36,9 @@ mapGridM_ :: Monad m => (a -> m b) -> Grid2D a -> m ()
 mapGridM_ f g = do
   _ <- mapGridM f g
   return ()
+
+zipGrid :: Grid2D a -> Grid2D b -> Grid2D (a, b)
+zipGrid = V.zipWith V.zip
 
 unzipGrid :: Grid2D (b, c) -> (Grid2D b, Grid2D c)
 unzipGrid = V.unzip . (V.map V.unzip)
