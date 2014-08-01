@@ -68,58 +68,38 @@ swapTiles m ((x, y), True) (st, board) = let
    update2D rightLogic rightPos board
 
 handleGravity :: TileMap -> (BoardState, Board) -> (BoardState, Board)
-handleGravity m (bs, b) = (V.map handleStateCol bs, V.generate blocksPerRow handleLogicCol)
+handleGravity m (bs, b) = unzipGrid (V.imap handleCol $ zipGrid bs b)
   where
-    handleStateCol :: V.Vector Tile -> V.Vector Tile
-    handleStateCol vec = V.fromList $ walkCol 0 False
-      where
-        walkCol :: Int -> Bool -> [Tile]
-        walkCol row isFalling
-          | row == (rowsPerBoard - 1) && isFalling = [FallingOut]
-          | row == (rowsPerBoard - 1) = [vec V.! row]
-          | otherwise = let topTile = case vec V.! (row + 1) of
-                              (Stationary c) ->
-                                Just (Falling False (fromIntegral blockSize) c)
-                              (Falling True x c) ->
-                                Just (Falling False (fromIntegral blockSize + x) c)
-                              _ -> Nothing
-                        in
-                         case vec V.! row of
-                           Blank -> case topTile of
-                             Nothing -> Blank : (walkCol (row + 1) False)
-                             Just tile -> tile : (walkCol (row + 1) True)
-                           x | isFalling ->
-                             case topTile of
-                               Nothing -> FallingOut : (walkCol (row + 1) False)
-                               Just tile -> tile : (walkCol (row + 1) True)
-                             | otherwise -> x : (walkCol (row + 1) False)
-
-    handleLogicCol :: Int -> V.Vector TileLogic
-    handleLogicCol col' = V.fromList $ walkCol 1 False
+    handleCol :: Int -> V.Vector (Tile, TileLogic) -> V.Vector (Tile, TileLogic)
+    handleCol col' vec = V.fromList $ walkCol 0 False
       where
         col = col' + 1
-
+        
         newlyFalling :: TileLogic
         newlyFalling = (pure FallingOut >>> (for $ gTileFallTime)) --> blank
 
-        walkCol :: Int -> Bool -> [TileLogic]
+        walkCol :: Int -> Bool -> [(Tile, TileLogic)]
         walkCol row isFalling
-          | row == rowsPerBoard && isFalling = [newlyFalling]
-          | row == rowsPerBoard = [get2D (col, row) b]
-          | otherwise = let topLogic = case get2D (col, row + 1) bs of
-                              (Stationary color) -> Just (falling m color col row)
-                              (Falling True x color) -> Just (stillFalling m color x col row)
+          | row == (rowsPerBoard - 1) && isFalling = [(FallingOut, newlyFalling)]
+          | row == (rowsPerBoard - 1) = [vec V.! row]
+          | otherwise = let topTile = case vec V.! (row + 1) of
+                              (Stationary c, _) ->
+                                Just (Falling False (fromIntegral blockSize) c,
+                                      falling m c col (row + 1))
+                              (Falling True x c, _) ->
+                                Just (Falling False (fromIntegral blockSize + x) c,
+                                      stillFalling m c x col (row + 1))
                               _ -> Nothing
                         in
-                         case get2D (col, row) bs of
-                           Blank -> case topLogic of
-                             Nothing -> blank : (walkCol (row + 1) False)
-                             Just logic -> logic : (walkCol (row + 1) True)
-                           _ | isFalling ->
-                             case topLogic of
-                               Nothing -> newlyFalling : (walkCol (row + 1) False)
-                               Just logic -> logic : (walkCol (row + 1) True)
-                             | otherwise -> (get2D (col, row) b) : (walkCol (row + 1) False)
+                         case vec V.! row of
+                           (Blank, _) -> case topTile of
+                             Nothing -> (Blank, blank) : (walkCol (row + 1) False)
+                             Just tile -> tile : (walkCol (row + 1) True)
+                           x | isFalling ->
+                             case topTile of
+                               Nothing -> (FallingOut, newlyFalling) : (walkCol (row + 1) False)
+                               Just tile -> tile : (walkCol (row + 1) True)
+                             | otherwise -> x : (walkCol (row + 1) False)
 
 type Combo = (GridLocation2D, TileColor)
 handleCombos :: TileMap -> (BoardState, Board) -> (BoardState, Board)
