@@ -4,6 +4,7 @@ module TetrisAttack.Board (
 ) where
 
 --------------------------------------------------------------------------------
+import Control.Monad.State.Strict
 import Control.Monad.RWS.Strict hiding (when)
 import Control.Wire hiding ((.))
 import Data.List (nub)
@@ -40,7 +41,7 @@ swapTiles m ((x, y), True) (st, board) = let
   leftTile = get2D leftPos st
   rightTile = get2D rightPos st
 
-  swappingWire = (pure SwappedOut >>> (for $ gSwapDelay)) --> blank
+  swappingWire = (pure SwappedOut >>> (for gSwapDelay)) --> blank
 
   (leftLogic, rightLogic) = case (rightTile, leftTile) of
     (Stationary rcolor, Stationary lcolor) ->
@@ -64,42 +65,68 @@ swapTiles m ((x, y), True) (st, board) = let
     _ -> (get2D leftPos board, get2D rightPos board)
 
   in
-   update2D leftLogic leftPos $
-   update2D rightLogic rightPos board
+   update2D leftLogic leftPos $ update2D rightLogic rightPos board
 
 handleGravity :: TileMap -> (BoardState, Board) -> (BoardState, Board)
 handleGravity m (bs, b) = unzipGrid (V.imap handleCol $ zipGrid bs b)
   where
-    handleCol :: Int -> V.Vector (Tile, TileLogic) -> V.Vector (Tile, TileLogic)
-    handleCol col' vec = V.fromList $ walkCol 0 False
-      where
-        col = col' + 1
-        
-        newlyFalling :: TileLogic
-        newlyFalling = (pure FallingOut >>> (for $ gTileFallTime)) --> blank
+    newlyFalling :: TileLogic
+    newlyFalling = (pure FallingOut >>> (for gTileFallTime)) --> blank
 
-        walkCol :: Int -> Bool -> [(Tile, TileLogic)]
-        walkCol row isFalling
-          | row == (rowsPerBoard - 1) && isFalling = [(FallingOut, newlyFalling)]
-          | row == (rowsPerBoard - 1) = [vec V.! row]
-          | otherwise = let topTile = case vec V.! (row + 1) of
-                              (Stationary c, _) ->
-                                Just (Falling False (fromIntegral blockSize) c,
-                                      falling m c col (row + 1))
-                              (Falling True x c, _) ->
-                                Just (Falling False (fromIntegral blockSize + x) c,
-                                      stillFalling m c x col (row + 1))
-                              _ -> Nothing
-                        in
-                         case vec V.! row of
-                           (Blank, _) -> case topTile of
-                             Nothing -> (Blank, blank) : (walkCol (row + 1) False)
-                             Just tile -> tile : (walkCol (row + 1) True)
-                           x | isFalling ->
-                             case topTile of
-                               Nothing -> (FallingOut, newlyFalling) : (walkCol (row + 1) False)
-                               Just tile -> tile : (walkCol (row + 1) True)
-                             | otherwise -> x : (walkCol (row + 1) False)
+    handleCol :: Int -> V.Vector (Tile, TileLogic) -> V.Vector (Tile, TileLogic)
+    handleCol col vec = evalState (V.generateM rowsPerBoard genCol) False
+      where
+        genCol :: Int -> State Bool (Tile, TileLogic)
+        genCol row
+          -- Last row, just check if falling
+          | row == (rowsPerBoard - 1) = do
+            isFalling <- get
+            if isFalling
+              then return (FallingOut, newlyFalling)
+              else return (vec V.! row)
+
+          -- If it's not the last row, then first see what the top tile *would* be
+          -- and then if we're going to fall, replace the current tile with the tile
+          -- that the top tile turns into...
+          | otherwise = let
+        
+            tileOnTop = case vec V.! (row + 1) of
+              -- If the tile on top is stationary, then it will begin falling
+              (Stationary c, _) ->
+                Just (Falling False (fromIntegral blockSize) c,
+                      falling m c (col + 1) (row + 1))
+
+              -- If the tile on top is falling and about to become stationary,
+              -- then it will keep falling
+              (Falling True x c, _) ->
+                Just (Falling False (fromIntegral blockSize + x) c,
+                      stillFalling m c x (col + 1) (row + 1))
+
+              -- If the tile does not meet any of the above criteria, it shouldn't
+              -- fall down to the next level
+              _ -> Nothing
+
+            -- We can fall into this tile, so check if anything falls into it,
+            -- and if not, then become the otherwiseTile
+            checkTop :: (Tile, TileLogic) -> State Bool (Tile, TileLogic)
+            checkTop otherwiseTile =
+              case tileOnTop of
+                Nothing -> do { put False; return otherwiseTile }
+                Just tile -> do { put True; return tile }
+
+           in do
+              isFalling <- get
+              case vec V.! row of
+                -- If this tile is blank, then the tile above can fall into it.
+                (Blank, _) -> checkTop (Blank, blank)
+
+                -- If this tile is not blank, but is falling itself, then the tile
+                -- above can fall into it.
+                x | isFalling -> checkTop (FallingOut, newlyFalling)
+
+                -- If this tile is not blank and is not falling, then the tile above
+                -- cannot fall into it, and the tile remains stationary
+                  | otherwise -> return x
 
 type Combo = (GridLocation2D, TileColor)
 handleCombos :: TileMap -> (BoardState, Board) -> (BoardState, Board)
@@ -193,7 +220,8 @@ mkBoard tmap board' = do
 
     boardLogic :: Board -> L.GameWire Cursor BoardState
     boardLogic board = let
-      stepTileLogic :: L.TimeStep -> Float -> TileLogic -> L.GameMonad (Either () Tile, TileLogic)
+      stepTileLogic :: L.TimeStep -> Float -> TileLogic ->
+                       L.GameMonad (Either () Tile, TileLogic)
       stepTileLogic ts up logic = stepWire logic ts (Right up)
 
       inhibitGrid :: Grid2D (Either () Tile) -> Either () (Grid2D Tile)
