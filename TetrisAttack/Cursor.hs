@@ -38,8 +38,8 @@ mkCursor loc' = do
                L.nonuniformScale (V3 (bs*8/7) (bs*4/7) 1) $
                L.identity
 
-      censor (L.Render3DAction xf ro :) $
-        return (Right c)
+      L.addRenderAction xf ro
+      return (Right c)
       
     cursor :: GridLocation2D -> L.GameWire Float Cursor
     cursor oldloc = mkGenN $ \_ -> do

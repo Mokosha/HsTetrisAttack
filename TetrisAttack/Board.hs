@@ -5,7 +5,6 @@ module TetrisAttack.Board (
 
 --------------------------------------------------------------------------------
 import Control.Monad.State.Strict
-import Control.Monad.RWS.Strict hiding (when)
 import Control.Wire hiding ((.))
 import Data.List (nub)
 import qualified Data.Vector as V
@@ -215,8 +214,8 @@ mkBoard tmap board' = do
                             renderDepth RenderLayer'Board) $
                L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
                L.identity
-      censor (L.Render3DAction xf ro :) $
-        return (Right tiles)
+      L.addRenderAction xf ro
+      return (Right tiles)
 
     boardLogic :: Board -> L.GameWire Cursor BoardState
     boardLogic board = let

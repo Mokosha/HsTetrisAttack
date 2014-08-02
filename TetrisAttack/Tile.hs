@@ -4,7 +4,6 @@ module TetrisAttack.Tile (
   renderTile, blank, stationary, moving, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
-import Control.Monad.RWS.Strict hiding (when)
 import Control.Wire hiding ((.))
 import Data.Char (toLower)
 import qualified Data.Map as Map
@@ -69,7 +68,7 @@ renderTile ro (V2 trx try) = let
        L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 2))) $
        L.identity
   in
-   censor (L.Render3DAction xf ro :) $ return ()
+   L.addRenderAction xf ro
 
 blank :: L.GameWire Float Tile
 blank = pure Blank
