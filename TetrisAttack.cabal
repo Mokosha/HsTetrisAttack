@@ -28,6 +28,7 @@ executable TetrisAttack
                   TetrisAttack.Tile
                   TetrisAttack.Board
                   TetrisAttack.Cursor
+                  TetrisAttack.Game
                   TetrisAttack.Grid
   ghc-options:    -Wall -rtsopts
   build-depends:  base > 4.6,

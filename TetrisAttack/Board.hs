@@ -201,12 +201,13 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map (fst.fst) gatheredTiles) s
 updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
 updateBoard m c st = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((,) st)
 
-mkBoard :: TileMap -> Board -> IO (L.GameWire Cursor BoardState)
+mkBoard :: TileMap -> Board -> IO (L.GameWire Float BoardState)
 mkBoard tmap board' = do
 --  (Just bgTex) <- getDataFileName ("background" <.> "png") >>= L.loadTextureFromPNG
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
   bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
-  return (boardLogic board' >>> (boardRender bg))
+  cur' <- mkCursor boardCenter
+  return (boardLogic cur' board' >>> (boardRender bg))
   where
     boardRender :: L.RenderObject -> L.GameWire BoardState BoardState
     boardRender ro = mkGen_ $ \tiles -> do
@@ -217,8 +218,8 @@ mkBoard tmap board' = do
       L.addRenderAction xf ro
       return (Right tiles)
 
-    boardLogic :: Board -> L.GameWire Cursor BoardState
-    boardLogic board = let
+    boardLogic :: L.GameWire Float Cursor -> Board -> L.GameWire Float BoardState
+    boardLogic cursor board = let
       stepTileLogic :: L.TimeStep -> Float -> TileLogic ->
                        L.GameMonad (Either () Tile, TileLogic)
       stepTileLogic ts up logic = stepWire logic ts (Right up)
@@ -228,10 +229,13 @@ mkBoard tmap board' = do
         | V.any (\v -> V.any (\x -> x == Left ()) v) grid = Left ()
         | otherwise = Right $ mapGrid (\(Right t) -> t) grid
       in
-       mkGen $ \timestep cur -> do
+       mkGen $ \timestep yoffset -> do
+
+         (Right newCursor, nextCursorWire) <- stepWire cursor timestep (Right yoffset)
+
          resGrid <- mapGridM (stepTileLogic timestep 0.0) board
          let (tiles', logic) = unzipGrid resGrid
              tiles = inhibitGrid tiles'
          case tiles of
-           Right st -> return (Right st, boardLogic $ updateBoard tmap cur st logic)
-           Left _ -> return (Left (), boardLogic board)
+           Right st -> return (Right st, boardLogic nextCursorWire $ updateBoard tmap newCursor st logic)
+           Left _ -> return (Left (), boardLogic nextCursorWire board)
