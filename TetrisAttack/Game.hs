@@ -43,16 +43,17 @@ gameLoop firstBoard = let
     (boardState, nextBoard) <- stepWire board ts (Right flt)
     case boardState of
       Left () -> return (Left (), loopFn nextBoard)
-      Right bs -> return (Right (bs, flt + (dtime ts)), loopFn nextBoard)
-  
+      Right bs -> return (Right (bs, flt), loopFn nextBoard)
+
+  -- !FIXME! The rate at which the board rises should be dynamic
   loopFn :: L.GameWire Float BoardState -> L.GameWire (GameResult, Float) (BoardState, Float)
-  loopFn board = mkGen $ \ts (result, flt) -> runBoard result flt ts board
+  loopFn board = mkGen $ \ts (result, flt) -> runBoard result (flt + 10*(dtime ts)) ts board
   in
-   mkGen $ \ts (result, _) -> runBoard result 0 ts firstBoard
+   loopFn firstBoard
    
 mkGame :: IO (L.GameWire GameResult GameResult)
 mkGame = do
   tmap <- loadTiles
   board <- mkBoard tmap $ initBoard tmap
-  return $ when (== Running) >>> (loop $ gameLoop board) >>> (arr analyzeTiles)
+  return $ when (== Running) >>> (semiLoop 0 $ gameLoop board) >>> (arr analyzeTiles)
 

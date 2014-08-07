@@ -62,9 +62,9 @@ loadTiles = let
 
 type TileLogic = L.GameWire Float Tile
 
-renderTile :: L.RenderObject -> V2 Float -> L.GameMonad ()
-renderTile ro (V2 trx try) = let
-  xf = L.translate (V3 trx try $ renderDepth RenderLayer'Tiles) $
+renderTile :: L.RenderObject -> Float -> V2 Float -> L.GameMonad ()
+renderTile ro yoffset (V2 trx try) = let
+  xf = L.translate (V3 trx (try + yoffset) $ renderDepth RenderLayer'Tiles) $
        L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 2))) $
        L.identity
   in
@@ -74,8 +74,8 @@ blank :: L.GameWire Float Tile
 blank = pure Blank
 
 stationary :: TileMap -> TileColor -> GridLocation2D -> L.GameWire Float Tile
-stationary m color loc = mkGen_ $ \_ -> do
-  renderTile (m Map.! color) (blockCenter loc)
+stationary m color loc = mkGen_ $ \offset -> do
+  renderTile (m Map.! color) offset (blockCenter loc)
   return $ Right $ Stationary color
 
 countFromOne :: Float -> L.GameWire Float Float
@@ -99,12 +99,12 @@ moving m color start end =
       lerpWire :: L.GameWire Float (V2 Float)
       lerpWire = mkSF_ $ \t -> lerp t (blockCenter start) (blockCenter end)
 
-      movingWire :: L.GameWire (V2 Float) Tile
-      movingWire = mkGen_ $ \pos -> do
-        renderTile (m Map.! color) pos
+      movingWire :: L.GameWire (Float, V2 Float) Tile
+      movingWire = mkGen_ $ \(yoff, pos) -> do
+        renderTile (m Map.! color) yoff pos
         return $ Right Moving
   in
-   (timer gSwapTime >>> smoothstep >>> lerpWire >>> movingWire) --> (stationary m color end)
+   (mkId &&& (timer gSwapTime >>> smoothstep >>> lerpWire) >>> movingWire) --> (stationary m color end)
 
 falling :: TileMap -> TileColor -> Int -> Int -> L.GameWire Float Tile
 falling m color col end =
@@ -117,13 +117,13 @@ falling m color col end =
       lerpWire :: L.GameWire Float (V2 Float)
       lerpWire = mkSF_ $ \t -> lerp t (blockCenter (col, end)) (blockCenter (col, end + 1))
 
-      movingWire :: L.GameWire (Bool, V2 Float) Tile
-      movingWire = mkGen_ $ \(lastFrame, pos) -> do
+      movingWire :: L.GameWire (Float, (Bool, V2 Float)) Tile
+      movingWire = mkGen_ $ \(y, (lastFrame, pos)) -> do
         let (V2 _ yoff) = pos ^-^ (blockCenter (col, end))
-        renderTile (m Map.! color) pos
+        renderTile (m Map.! color) y pos
         return $ Right (Falling lastFrame yoff color)
   in
-   ((awareTimer gTileFallTime) >>> (second lerpWire) >>> movingWire) --> (stationary m color (col, end))
+   (mkId &&& ((awareTimer gTileFallTime) >>> (second lerpWire)) >>> movingWire) --> (stationary m color (col, end))
 
 stillFalling :: TileMap -> TileColor -> Float -> Int -> Int -> L.GameWire Float Tile
 stillFalling m color offset col end =
@@ -136,12 +136,12 @@ stillFalling m color offset col end =
             remaining = dist - travelling
         in (Right (remaining < travelling, remaining), reduce remaining)
 
-      movingWire :: L.GameWire (Bool, Float) Tile
-      movingWire = mkGen_ $ \(lastFrame, yoff) -> do
-        renderTile (m Map.! color) (V2 trx (try + yoff))
+      movingWire :: L.GameWire (Float, (Bool, Float)) Tile
+      movingWire = mkGen_ $ \(y, (lastFrame, yoff)) -> do
+        renderTile (m Map.! color) y (V2 trx (try + yoff))
         return $ Right (Falling lastFrame yoff color)
   in
-   (reduce (fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color (col, end))
+   (mkId &&& (reduce $ fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color (col, end))
 
 vanishing :: Float -> TileMap -> TileColor -> GridLocation2D -> L.GameWire Float Tile
 vanishing delayTime m color loc = let
@@ -149,11 +149,11 @@ vanishing delayTime m color loc = let
   alpha = timer gVanishTime
 
   render :: L.GameWire (Float, Float) Tile
-  render = mkGen_ $ \(a, _) -> let
+  render = mkGen_ $ \(a, yoff) -> let
     setAlpha ro = ro { L.material = Map.insert "alpha" (L.FloatVal a) (L.material ro),
                        L.flags = L.Transparent : (L.flags ro) }
     in do
-      renderTile (setAlpha $ m Map.! color) (blockCenter loc)
+      renderTile (setAlpha $ m Map.! color) yoff (blockCenter loc)
       return $ Right Vanishing
 
   in

@@ -233,9 +233,10 @@ mkBoard tmap board' = do
 
          (Right newCursor, nextCursorWire) <- stepWire cursor timestep (Right yoffset)
 
-         resGrid <- mapGridM (stepTileLogic timestep 0.0) board
+         resGrid <- mapGridM (stepTileLogic timestep yoffset) board
          let (tiles', logic) = unzipGrid resGrid
              tiles = inhibitGrid tiles'
          case tiles of
            Right st -> return (Right st, boardLogic nextCursorWire $ updateBoard tmap newCursor st logic)
            Left _ -> return (Left (), boardLogic nextCursorWire board)
+
