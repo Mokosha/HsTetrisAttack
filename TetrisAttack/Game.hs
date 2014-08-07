@@ -23,6 +23,17 @@ analyzeTiles st
   | V.any (\v -> v V.! (rowsPerBoard - 1) /= Blank) st = GameOver
   | otherwise = Running
 
+semiLoop :: (Monad m, Monoid s, Monoid e) => c -> Wire s e m (a, c) (b, c) -> Wire s e m a b
+semiLoop initialValue loopWire = let
+  runLoop :: (Monad m, Monoid s, Monoid e) => Wire s e m (a, c) (b, c) -> s -> a -> c -> m (Either e b, Wire s e m a b)
+  runLoop wire ts ipt x = do
+    (result, nextWire) <- stepWire wire ts (Right (ipt, x))
+    case result of
+      Left i -> return (Left i, mkEmpty)
+      Right (value, nextX) -> return (Right value, mkGen $ \ts' ipt' -> runLoop nextWire ts' ipt' nextX)
+  in
+   mkGen $ \ts input -> runLoop loopWire ts input initialValue
+
 gameLoop :: L.GameWire Float BoardState -> L.GameWire (GameResult, Float) (BoardState, Float)
 gameLoop firstBoard = let
   runBoard :: GameResult -> Float -> L.TimeStep -> L.GameWire Float BoardState ->
