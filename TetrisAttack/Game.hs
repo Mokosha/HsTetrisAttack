@@ -25,29 +25,35 @@ analyzeTiles st
 
 semiLoop :: (Monad m, Monoid s, Monoid e) => c -> Wire s e m (a, c) (b, c) -> Wire s e m a b
 semiLoop initialValue loopWire = let
-  runLoop :: (Monad m, Monoid s, Monoid e) => Wire s e m (a, c) (b, c) -> s -> a -> c -> m (Either e b, Wire s e m a b)
+  runLoop :: (Monad m, Monoid s, Monoid e) =>
+             Wire s e m (a, c) (b, c) -> s -> a -> c -> m (Either e b, Wire s e m a b)
   runLoop wire ts ipt x = do
     (result, nextWire) <- stepWire wire ts (Right (ipt, x))
     case result of
       Left i -> return (Left i, mkEmpty)
-      Right (value, nextX) -> return (Right value, mkGen $ \ts' ipt' -> runLoop nextWire ts' ipt' nextX)
+      Right (value, nextX) ->
+        return (Right value, mkGen $ \ts' ipt' -> runLoop nextWire ts' ipt' nextX)
   in
    mkGen $ \ts input -> runLoop loopWire ts input initialValue
 
 gameLoop :: L.GameWire Float BoardState -> L.GameWire (GameResult, Float) (BoardState, Float)
 gameLoop firstBoard = let
   runBoard :: GameResult -> Float -> L.TimeStep -> L.GameWire Float BoardState ->
-              L.GameMonad (Either () (BoardState, Float), L.GameWire (GameResult, Float) (BoardState, Float))
+              L.GameMonad (Either () (BoardState, Float),
+                           L.GameWire (GameResult, Float) (BoardState, Float))
   runBoard GameOver _ _ b = return (Left (), loopFn b)
   runBoard Running flt ts board = do
     (boardState, nextBoard) <- stepWire board ts (Right flt)
+    let nflt = flt + 10*(dtime ts)
+        blockSzF = (fromIntegral blockSize)
+        nextFlt = if nflt > blockSzF then (nflt - blockSzF) else nflt
     case boardState of
       Left () -> return (Left (), loopFn nextBoard)
-      Right bs -> return (Right (bs, flt), loopFn nextBoard)
+      Right bs -> return (Right (bs, nextFlt), loopFn nextBoard)
 
   -- !FIXME! The rate at which the board rises should be dynamic
   loopFn :: L.GameWire Float BoardState -> L.GameWire (GameResult, Float) (BoardState, Float)
-  loopFn board = mkGen $ \ts (result, flt) -> runBoard result (flt + 10*(dtime ts)) ts board
+  loopFn board = mkGen $ \ts (result, flt) -> runBoard result flt ts board
   in
    loopFn firstBoard
    

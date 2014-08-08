@@ -9,7 +9,9 @@ import Control.Wire hiding ((.))
 import Data.List (nub)
 import qualified Data.Vector as V
 import qualified Lambency as L
+import Linear.Vector
 import Linear.V3
+import Linear.V2
 
 import TetrisAttack.Constants
 import TetrisAttack.Cursor
@@ -17,20 +19,17 @@ import TetrisAttack.Grid
 import TetrisAttack.Tile
 --------------------------------------------------------------------------------
 
-type Board = Grid2D TileLogic
+type Board a = Grid2D (TileLogic a)
 type BoardState = Grid2D Tile
 
-initBoard :: TileMap -> Board
-initBoard m =
-  V.generate blocksPerRow $ \col ->
-  V.generate rowsPerBoard $ \row ->
-  if row < (rowsPerBoard - 10) then
-    map (flip (stationary m) (col+1, row+1)) [Red, Green, Blue, Yellow, Purple]
-    !! ((row + col) `mod` 5)
-  else
-    blank
+initBoard :: TileMap -> Board a
+initBoard m = let
+  stList :: [TileLogic a]
+  stList = cycle (map (stationary m) [Red, Green, Blue, Yellow, Purple])
+  in generateGrid blocksPerRow rowsPerBoard $
+     \x y -> if y < (rowsPerBoard - 10) then (stList !! (x + y)) else blank
 
-swapTiles :: TileMap -> Cursor -> (BoardState, Board) -> Board
+swapTiles :: TileMap -> Cursor -> (BoardState, Board a) -> Board a
 swapTiles _ (_, False) (_, b) = b
 swapTiles m ((x, y), True) (st, board) = let
 
@@ -40,42 +39,30 @@ swapTiles m ((x, y), True) (st, board) = let
   leftTile = get2D leftPos st
   rightTile = get2D rightPos st
 
-  swappingWire = (pure SwappedOut >>> (for gSwapDelay)) --> blank
+  swappingWire = (pure (\_ -> return SwappedOut) >>> (for gSwapDelay)) --> blank
 
   (leftLogic, rightLogic) = case (rightTile, leftTile) of
-    (Stationary rcolor, Stationary lcolor) ->
-      (moving m rcolor rightPos leftPos,
-       moving m lcolor leftPos rightPos)
-    (Blank, Stationary lcolor) ->
-      (swappingWire,
-       moving m lcolor leftPos rightPos)
-    (Stationary rcolor, Blank) ->
-      (moving m rcolor rightPos leftPos,
-       swappingWire)
+    (Stationary rcolor, Stationary lcolor) -> (swapping m rcolor False, swapping m lcolor True)
+    (Blank, Stationary lcolor) -> (swappingWire, swapping m lcolor True)
+    (Stationary rcolor, Blank) -> (swapping m rcolor False, swappingWire)
     (Falling True _ rcolor, Falling True _ lcolor) ->
-      (moving m rcolor rightPos leftPos,
-       moving m lcolor leftPos rightPos)
-    (Blank, Falling True _ lcolor) ->
-      (swappingWire,
-       moving m lcolor leftPos rightPos)
-    (Falling True _ rcolor, Blank) ->
-      (moving m rcolor rightPos leftPos,
-       swappingWire)
+      (swapping m rcolor False, swapping m lcolor True)
+    (Blank, Falling True _ lcolor) -> (swappingWire, swapping m lcolor True)
+    (Falling True _ rcolor, Blank) -> (swapping m rcolor False, swappingWire)
     _ -> (get2D leftPos board, get2D rightPos board)
-
   in
    update2D leftLogic leftPos $ update2D rightLogic rightPos board
 
-handleGravity :: TileMap -> (BoardState, Board) -> (BoardState, Board)
-handleGravity m (bs, b) = unzipGrid (V.imap handleCol $ zipGrid bs b)
+handleGravity :: TileMap -> (BoardState, Board a) -> (BoardState, Board a)
+handleGravity m (bs, b) = unzipGrid (V.map handleCol $ zipGrid bs b)
   where
-    newlyFalling :: TileLogic
-    newlyFalling = (pure FallingOut >>> (for gTileFallTime)) --> blank
+    newlyFalling :: TileLogic a
+    newlyFalling = (pure (\_ -> return FallingOut) >>> (for gTileFallTime)) --> blank
 
-    handleCol :: Int -> V.Vector (Tile, TileLogic) -> V.Vector (Tile, TileLogic)
-    handleCol col vec = evalState (V.generateM rowsPerBoard genCol) False
+    handleCol :: V.Vector (Tile, TileLogic a) -> V.Vector (Tile, TileLogic a)
+    handleCol vec = evalState (V.generateM rowsPerBoard genCol) False
       where
-        genCol :: Int -> State Bool (Tile, TileLogic)
+        -- genCol :: Int -> State Bool (Tile, TileLogic a)
         genCol row
           -- Last row, just check if falling
           | row == (rowsPerBoard - 1) = do
@@ -92,14 +79,12 @@ handleGravity m (bs, b) = unzipGrid (V.imap handleCol $ zipGrid bs b)
             tileOnTop = case vec V.! (row + 1) of
               -- If the tile on top is stationary, then it will begin falling
               (Stationary c, _) ->
-                Just (Falling False (fromIntegral blockSize) c,
-                      falling m c (col + 1) (row + 1))
+                Just (Falling False (fromIntegral blockSize) c, falling m c)
 
               -- If the tile on top is falling and about to become stationary,
               -- then it will keep falling
               (Falling True x c, _) ->
-                Just (Falling False (fromIntegral blockSize + x) c,
-                      stillFalling m c x (col + 1) (row + 1))
+                Just (Falling False (fromIntegral blockSize + x) c, stillFalling m c x)
 
               -- If the tile does not meet any of the above criteria, it shouldn't
               -- fall down to the next level
@@ -107,7 +92,7 @@ handleGravity m (bs, b) = unzipGrid (V.imap handleCol $ zipGrid bs b)
 
             -- We can fall into this tile, so check if anything falls into it,
             -- and if not, then become the otherwiseTile
-            checkTop :: (Tile, TileLogic) -> State Bool (Tile, TileLogic)
+            checkTop :: (Tile, TileLogic a) -> State Bool (Tile, TileLogic a)
             checkTop otherwiseTile =
               case tileOnTop of
                 Nothing -> do { put False; return otherwiseTile }
@@ -128,15 +113,15 @@ handleGravity m (bs, b) = unzipGrid (V.imap handleCol $ zipGrid bs b)
                   | otherwise -> return x
 
 type Combo = (GridLocation2D, TileColor)
-handleCombos :: TileMap -> (BoardState, Board) -> (BoardState, Board)
+handleCombos :: TileMap -> (BoardState, Board a) -> (BoardState, Board a)
 handleCombos m (st, b) = (bulkUpdate2D Vanishing (map (fst.fst) gatheredTiles) st,
                           foldr updateLogic b gatheredTiles)
   where
     vanishingDelay :: Float
     vanishingDelay = gVanishTime * 0.5
 
-    updateLogic :: (Combo, Float) -> Board -> Board
-    updateLogic ((loc, color), delayTime) = update2D (vanishing delayTime m color loc) loc
+    updateLogic :: (Combo, Float) -> Board a -> Board a
+    updateLogic ((loc, color), delayTime) = update2D (vanishing delayTime m color) loc
 
     countWalker :: GridWalker Tile [(Int, TileColor, Int)]
     countWalker = countHelper 0 1 Blank []
@@ -198,10 +183,10 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map (fst.fst) gatheredTiles) s
     gatheredTiles :: [(Combo, Float)]
     gatheredTiles = nub $ gatheredCols ++ gatheredRows
 
-updateBoard :: TileMap -> Cursor -> BoardState -> Board -> Board
+updateBoard :: TileMap -> Cursor -> BoardState -> Board a -> Board a
 updateBoard m c st = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((,) st)
 
-mkBoard :: TileMap -> Board -> IO (L.GameWire Float BoardState)
+mkBoard :: TileMap -> Board a -> IO (L.GameWire Float BoardState)
 mkBoard tmap board' = do
 --  (Just bgTex) <- getDataFileName ("background" <.> "png") >>= L.loadTextureFromPNG
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
@@ -218,25 +203,34 @@ mkBoard tmap board' = do
       L.addRenderAction xf ro
       return (Right tiles)
 
-    boardLogic :: L.GameWire Float Cursor -> Board -> L.GameWire Float BoardState
+    boardLogic :: L.GameWire Float Cursor -> Board a -> L.GameWire Float BoardState
     boardLogic cursor board = let
-      stepTileLogic :: L.TimeStep -> Float -> TileLogic ->
-                       L.GameMonad (Either () Tile, TileLogic)
-      stepTileLogic ts up logic = stepWire logic ts (Right up)
+      stepTileLogic :: L.TimeStep -> TileLogic a ->
+                       L.GameMonad (Either () (V2 Float -> L.GameMonad Tile), TileLogic a)
+      stepTileLogic ts logic = stepWire logic ts (Right undefined) -- !FIXME!
 
-      inhibitGrid :: Grid2D (Either () Tile) -> Either () (Grid2D Tile)
+      inhibitGrid :: Grid2D (Either () a) -> Either () (Grid2D a)
       inhibitGrid grid
-        | V.any (\v -> V.any (\x -> x == Left ()) v) grid = Left ()
-        | otherwise = Right $ mapGrid (\(Right t) -> t) grid
+        | V.any (\v -> V.any (\x -> case x of
+                                 Left () -> True
+                                 Right _ -> False) v) grid = Left ()
+        | otherwise = Right $ mapGrid (\(Right x) -> x) grid
       in
        mkGen $ \timestep yoffset -> do
 
          (Right newCursor, nextCursorWire) <- stepWire cursor timestep (Right yoffset)
 
-         resGrid <- mapGridM (stepTileLogic timestep yoffset) board
-         let (tiles', logic) = unzipGrid resGrid
-             tiles = inhibitGrid tiles'
-         case tiles of
-           Right st -> return (Right st, boardLogic nextCursorWire $ updateBoard tmap newCursor st logic)
+         resGrid <- mapGridM (stepTileLogic timestep) board
+         let (mbTiles, logic) = unzipGrid resGrid
+             tileRenderFns = inhibitGrid mbTiles
+             gridPositions =
+               generateGrid blocksPerRow rowsPerBoard $ \x y ->
+               blockCenter (x+1, y+1) ^+^ (V2 0 yoffset)
+
+         case tileRenderFns of
+           Right fns -> do
+             st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
+             return (Right st, boardLogic nextCursorWire $
+                               updateBoard tmap newCursor st logic)
            Left _ -> return (Left (), boardLogic nextCursorWire board)
 

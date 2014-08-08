@@ -1,7 +1,7 @@
 module TetrisAttack.Tile (
   TileColor(..), Tile(..), TileMap, TileLogic,
   loadTiles,
-  renderTile, blank, stationary, moving, falling, stillFalling, vanishing
+  renderTile, blank, stationary, swapping, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
 import Control.Wire hiding ((.))
@@ -15,7 +15,6 @@ import System.FilePath
 
 import Paths_TetrisAttack
 import TetrisAttack.Constants
-import TetrisAttack.Grid
 --------------------------------------------------------------------------------
 
 data TileColor = Red | Green | Blue | Yellow | Purple
@@ -60,23 +59,23 @@ loadTiles = let
     ros <- mapM loadColor tilecolors
     return $ Map.fromList $ zip tilecolors ros
 
-type TileLogic = L.GameWire Float Tile
+type TileLogic a = L.GameWire a (V2 Float -> L.GameMonad Tile)
 
-renderTile :: L.RenderObject -> Float -> V2 Float -> L.GameMonad ()
-renderTile ro yoffset (V2 trx try) = let
-  xf = L.translate (V3 trx (try + yoffset) $ renderDepth RenderLayer'Tiles) $
+renderTile :: L.RenderObject -> V2 Float -> L.GameMonad ()
+renderTile ro (V2 trx try) = let
+  xf = L.translate (V3 trx try $ renderDepth RenderLayer'Tiles) $
        L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 2))) $
        L.identity
   in
    L.addRenderAction xf ro
 
-blank :: L.GameWire Float Tile
-blank = pure Blank
+blank :: TileLogic a
+blank = pure (\_ -> return Blank)
 
-stationary :: TileMap -> TileColor -> GridLocation2D -> L.GameWire Float Tile
-stationary m color loc = mkGen_ $ \offset -> do
-  renderTile (m Map.! color) offset (blockCenter loc)
-  return $ Right $ Stationary color
+stationary :: TileMap -> TileColor -> TileLogic a
+stationary m color = mkSF_ $ \_ -> \pos -> do
+  renderTile (m Map.! color) pos
+  return $ Stationary color
 
 countFromOne :: Float -> L.GameWire Float Float
 countFromOne end = (countToOne end) >>> (mkSF_ (1.0 -))
@@ -91,72 +90,71 @@ countToOne end = mkPure_ $ \t ->
 timer :: Float -> L.GameWire a Float
 timer duration = timeF >>> (countFromOne duration)
 
-moving :: TileMap -> TileColor -> GridLocation2D -> GridLocation2D -> L.GameWire Float Tile
-moving m color start end =
+swapping :: TileMap -> TileColor -> Bool -> TileLogic a
+swapping m color movingLeft =
   let smoothstep :: L.GameWire Float Float
       smoothstep = mkSF_ $ \x -> let x3 = x*x*x in 6*x3*x*x - 15*x3*x + 10*x3
 
-      lerpWire :: L.GameWire Float (V2 Float)
-      lerpWire = mkSF_ $ \t -> lerp t (blockCenter start) (blockCenter end)
-
-      movingWire :: L.GameWire (Float, V2 Float) Tile
-      movingWire = mkGen_ $ \(yoff, pos) -> do
-        renderTile (m Map.! color) yoff pos
-        return $ Right Moving
+      movingWire :: L.GameWire Float (V2 Float -> L.GameMonad Tile)
+      movingWire = mkSF_ $ \t -> \pos@(V2 px py) -> do
+        let otherPos =
+              if movingLeft
+                then (V2 (px - (fromIntegral blockSize)) py)
+                else (V2 (px + (fromIntegral blockSize)) py)
+        renderTile (m Map.! color) (lerp t otherPos pos)
+        return Moving
   in
-   (mkId &&& (timer gSwapTime >>> smoothstep >>> lerpWire) >>> movingWire) --> (stationary m color end)
+   (timer gSwapTime >>> smoothstep >>> movingWire) --> (stationary m color)
 
-falling :: TileMap -> TileColor -> Int -> Int -> L.GameWire Float Tile
-falling m color col end =
+falling :: TileMap -> TileColor -> TileLogic a
+falling m color =
   let awareTimer :: Float -> L.GameWire a (Bool, Float)
       awareTimer duration = timeF >>> (lastFrame &&& (countToOne duration >>> modTime))
         where
           modTime = mkSF_ $ \t -> (t*t*(2-t))
           lastFrame = mkSF $ \dt t -> ((duration - t) < (dtime dt), lastFrame)
 
-      lerpWire :: L.GameWire Float (V2 Float)
-      lerpWire = mkSF_ $ \t -> lerp t (blockCenter (col, end)) (blockCenter (col, end + 1))
-
-      movingWire :: L.GameWire (Float, (Bool, V2 Float)) Tile
-      movingWire = mkGen_ $ \(y, (lastFrame, pos)) -> do
-        let (V2 _ yoff) = pos ^-^ (blockCenter (col, end))
-        renderTile (m Map.! color) y pos
-        return $ Right (Falling lastFrame yoff color)
+      movingWire :: L.GameWire (Bool, Float) (V2 Float -> L.GameMonad Tile)
+      movingWire = mkSF_ $ \(lastFrame, t) -> \pos@(V2 px py) -> do
+        let renderPos = lerp t pos (V2 px $ py + (fromIntegral blockSize))
+            (V2 _ yoff) = renderPos ^-^ pos
+        renderTile (m Map.! color) renderPos
+        return $ Falling lastFrame yoff color
   in
-   (mkId &&& ((awareTimer gTileFallTime) >>> (second lerpWire)) >>> movingWire) --> (stationary m color (col, end))
+   (awareTimer gTileFallTime >>> movingWire) --> (stationary m color)
 
-stillFalling :: TileMap -> TileColor -> Float -> Int -> Int -> L.GameWire Float Tile
-stillFalling m color offset col end =
-  let (V2 trx try) = blockCenter (col, end)
-
-      reduce :: Float -> L.GameWire a (Bool, Float)
+stillFalling :: TileMap -> TileColor -> Float -> TileLogic a
+stillFalling m color offset =
+  let reduce :: Float -> L.GameWire a (Bool, Float)
       reduce 0 = empty
       reduce dist = mkPure $ \t _ ->
         let travelling = min (gTileFallSpeed * (dtime t)) dist
             remaining = dist - travelling
         in (Right (remaining < travelling, remaining), reduce remaining)
 
-      movingWire :: L.GameWire (Float, (Bool, Float)) Tile
-      movingWire = mkGen_ $ \(y, (lastFrame, yoff)) -> do
-        renderTile (m Map.! color) y (V2 trx (try + yoff))
-        return $ Right (Falling lastFrame yoff color)
+      movingWire :: L.GameWire (Bool, Float) (V2 Float -> L.GameMonad Tile)
+      movingWire = mkSF_ $ \(lastFrame, yoff) -> \(V2 px py) -> do
+        renderTile (m Map.! color) (V2 px (py + yoff))
+        return $ Falling lastFrame yoff color
   in
-   (mkId &&& (reduce $ fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color (col, end))
+   ((reduce $ fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color)
 
-vanishing :: Float -> TileMap -> TileColor -> GridLocation2D -> L.GameWire Float Tile
-vanishing delayTime m color loc = let
+vanishing :: Float -> TileMap -> TileColor -> TileLogic a
+vanishing delayTime m color = let
   alpha :: L.GameWire a Float
   alpha = timer gVanishTime
 
-  render :: L.GameWire (Float, Float) Tile
-  render = mkGen_ $ \(a, yoff) -> let
+  render :: L.GameWire Float (V2 Float -> L.GameMonad Tile)
+  render = mkSF_ $ \a -> \pos -> let
     setAlpha ro = ro { L.material = Map.insert "alpha" (L.FloatVal a) (L.material ro),
-                       L.flags = L.Transparent : (L.flags ro) }
+                       L.flags = if a < 1.0
+                                 then (L.Transparent : (L.flags ro))
+                                 else (L.flags ro) }
     in do
-      renderTile (setAlpha $ m Map.! color) yoff (blockCenter loc)
-      return $ Right Vanishing
+      renderTile (setAlpha $ m Map.! color) pos
+      return Vanishing
 
   in
-   ((timer delayTime >>> pure 1.0) &&& mkId >>> render) -->
-   ((alpha &&& mkId) >>> render) -->
+   ((timer delayTime >>> pure 1.0) >>> render) -->
+   (alpha >>> render) -->
    blank
