@@ -1,9 +1,9 @@
 module TetrisAttack.Grid (
   Grid2D, GridLocation2D,
-  get2D, update2D, bulkUpdate2D,
+  generateGrid, gridSize, get2D, update2D, bulkUpdate2D,
   GridWalker(..),
   walkRows, walkColumns,
-  mapGrid, mapGridM, mapGridM_, zipGrid, unzipGrid,
+  mapGrid, mapGridM, mapGridM_, imapGrid, imapGridM, imapGridM_, zipGrid, unzipGrid,
   GridUpdater(..), updateColumns
 ) where
 
@@ -26,6 +26,16 @@ statefulScanl f start v = let
 type Grid2D a = V.Vector (V.Vector a)
 type GridLocation2D = (Int, Int)
 
+gridSize :: Grid2D a -> (Int, Int)
+gridSize grid
+  | glength == 0 = (0, 0)
+  | otherwise = (glength, V.length $ V.head grid)
+  where
+    glength = V.length grid
+
+generateGrid :: Int -> Int -> (Int -> Int -> a) -> Grid2D a
+generateGrid cols rows f = V.generate cols (\col -> V.generate rows (\row -> f col row))
+
 mapGrid :: (a -> b) -> Grid2D a -> Grid2D b
 mapGrid f = V.map (\v -> V.map f v)
 
@@ -33,9 +43,18 @@ mapGridM :: Monad m => (a -> m b) -> Grid2D a -> m (Grid2D b)
 mapGridM f = V.mapM (\v -> V.mapM f v)
 
 mapGridM_ :: Monad m => (a -> m b) -> Grid2D a -> m ()
-mapGridM_ f g = do
-  _ <- mapGridM f g
-  return ()
+mapGridM_ f g = do { _ <- mapGridM f g; return () }
+
+imapGrid :: (Int -> Int -> a -> b) -> Grid2D a -> Grid2D b
+imapGrid f = V.imap (\col -> V.imap (\row -> f col row))
+
+imapGridM :: Monad m => ((Int, Int) -> a -> m b) -> Grid2D a -> m (Grid2D b)
+imapGridM f grid = mapGridM (uncurry f) (zipGrid locGrid grid)
+  where
+    locGrid = uncurry generateGrid (gridSize grid) (,)
+
+imapGridM_ :: Monad m => ((Int, Int) -> a -> m b) -> Grid2D a -> m ()
+imapGridM_ f g = do {_ <- imapGridM f g; return ()}
 
 zipGrid :: Grid2D a -> Grid2D b -> Grid2D (a, b)
 zipGrid = V.zipWith V.zip
