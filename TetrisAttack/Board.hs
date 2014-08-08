@@ -17,6 +17,8 @@ import TetrisAttack.Constants
 import TetrisAttack.Cursor
 import TetrisAttack.Grid
 import TetrisAttack.Tile
+
+import qualified Debug.Trace as T
 --------------------------------------------------------------------------------
 
 type Board a = Grid2D (TileLogic a)
@@ -186,13 +188,16 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map (fst.fst) gatheredTiles) s
 updateBoard :: TileMap -> Cursor -> BoardState -> Board a -> Board a
 updateBoard m c st = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((,) st)
 
+addBlockRow :: TileMap -> [TileColor] -> Board a -> Board a
+addBlockRow tmap row = V.zipWith V.cons (V.map (stationary tmap) (V.fromList row))
+
 mkBoard :: TileMap -> Board a -> IO (L.GameWire Float BoardState)
 mkBoard tmap board' = do
 --  (Just bgTex) <- getDataFileName ("background" <.> "png") >>= L.loadTextureFromPNG
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
   bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
   cur' <- mkCursor boardCenter
-  return (boardLogic cur' board' >>> (boardRender bg))
+  return (boardLogic fullRowTileGen cur' board' >>> (boardRender bg))
   where
     boardRender :: L.RenderObject -> L.GameWire BoardState BoardState
     boardRender ro = mkGen_ $ \tiles -> do
@@ -203,8 +208,11 @@ mkBoard tmap board' = do
       L.addRenderAction xf ro
       return (Right tiles)
 
-    boardLogic :: L.GameWire Float Cursor -> Board a -> L.GameWire Float BoardState
-    boardLogic cursor board = let
+    boardLogic :: TileGenerator -> L.GameWire Float Cursor -> Board a ->
+                  L.GameWire Float BoardState
+    boardLogic generator cursor board = let
+      (newRow, newGenerator) = generateTiles generator blocksPerRow
+
       stepTileLogic :: L.TimeStep -> TileLogic a ->
                        L.GameMonad (Either () (V2 Float -> L.GameMonad Tile), TileLogic a)
       stepTileLogic ts logic = stepWire logic ts (Right undefined) -- !FIXME!
@@ -219,18 +227,23 @@ mkBoard tmap board' = do
        mkGen $ \timestep yoffset -> do
 
          (Right newCursor, nextCursorWire) <- stepWire cursor timestep (Right yoffset)
+         let genRow = yoffset > (fromIntegral blockSize)
+             (newgen, runlogic) = if genRow
+                                  then (newGenerator, addBlockRow tmap newRow board)
+                                  else (generator, board)
 
-         resGrid <- mapGridM (stepTileLogic timestep) board
-         let (mbTiles, logic) = unzipGrid resGrid
+         resGrid <- mapGridM (stepTileLogic timestep) runlogic
+         let (mbTiles, newlogic) = unzipGrid resGrid
              tileRenderFns = inhibitGrid mbTiles
              gridPositions =
-               generateGrid blocksPerRow rowsPerBoard $ \x y ->
-               blockCenter (x+1, y+1) ^+^ (V2 0 yoffset)
+               generateGrid blocksPerRow rowsPerBoard $ \x y -> let
+                 yoff = if genRow then (yoffset - (fromIntegral blockSize)) else yoffset
+                 in blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
 
          case tileRenderFns of
            Right fns -> do
              st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
-             return (Right st, boardLogic nextCursorWire $
-                               updateBoard tmap newCursor st logic)
-           Left _ -> return (Left (), boardLogic nextCursorWire board)
+             return (Right st, boardLogic newgen nextCursorWire $
+                               updateBoard tmap newCursor st newlogic)
+           Left _ -> return (Left (), boardLogic newgen nextCursorWire board)
 

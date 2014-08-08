@@ -43,10 +43,9 @@ gameLoop firstBoard = let
                            L.GameWire (GameResult, Float) (BoardState, Float))
   runBoard GameOver _ _ b = return (Left (), loopFn b)
   runBoard Running flt ts board = do
+    let blockSzF = (fromIntegral blockSize)
+        nextFlt = if flt > blockSzF then (flt - blockSzF) else (flt + 10*(dtime ts))
     (boardState, nextBoard) <- stepWire board ts (Right flt)
-    let nflt = flt + 10*(dtime ts)
-        blockSzF = (fromIntegral blockSize)
-        nextFlt = if nflt > blockSzF then (nflt - blockSzF) else nflt
     case boardState of
       Left () -> return (Left (), loopFn nextBoard)
       Right bs -> return (Right (bs, nextFlt), loopFn nextBoard)

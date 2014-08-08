@@ -1,6 +1,7 @@
 module TetrisAttack.Tile (
   TileColor(..), Tile(..), TileMap, TileLogic,
   loadTiles,
+  TileGenerator(..), fullRowTileGen,
   renderTile, blank, stationary, swapping, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
@@ -46,10 +47,11 @@ data Tile =
 
 type TileMap = Map.Map TileColor L.RenderObject
 
+tilecolors :: [TileColor]
+tilecolors = [Red, Green, Blue, Yellow, Purple]
+
 loadTiles :: IO (TileMap)
 loadTiles = let
-  tilecolors = [Red, Green, Blue, Yellow, Purple]
-
   loadColor :: TileColor -> IO (L.RenderObject)
   loadColor color = do
     let filename = concat ["element_", map toLower $ show color, "_square" <.> "png"]
@@ -58,6 +60,15 @@ loadTiles = let
   in do
     ros <- mapM loadColor tilecolors
     return $ Map.fromList $ zip tilecolors ros
+
+newtype TileGenerator = TileGen { generateTiles :: Int -> ([TileColor], TileGenerator) }
+
+fullRowTileGen :: TileGenerator
+fullRowTileGen = let
+  genHelper :: Int -> [TileColor] -> ([TileColor], TileGenerator)
+  genHelper n tiles = (take n tiles, TileGen $ \nt -> genHelper nt $ drop n tiles)
+  in
+   TileGen $ \numTiles -> genHelper numTiles (cycle tilecolors)
 
 type TileLogic a = L.GameWire a (V2 Float -> L.GameMonad Tile)
 
