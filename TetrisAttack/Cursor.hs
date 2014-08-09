@@ -4,7 +4,7 @@ module TetrisAttack.Cursor (
 
 --------------------------------------------------------------------------------
 import Control.Monad.RWS.Strict hiding (when)
-import Control.Wire hiding ((.))
+import Control.Wire hiding ((.), id)
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Lambency as L
 import Linear.Vector
@@ -42,12 +42,17 @@ mkCursor loc' = do
       return (Right c)
       
     cursor :: GridLocation2D -> L.GameWire Float (Float, Cursor)
-    cursor l = mkId &&& (cursor' l)
-      where cursor' oldloc = mkGenN $ \_ -> do
+    cursor l =
+      arr (\y -> if y > (fromIntegral blockSize)
+                 then y - (fromIntegral blockSize)
+                 else y)
+      &&& (cursor' l)
+      where cursor' oldloc = mkGenN $ \yoff -> do
               ipt <- get
               let mapFst f (a, b) = (f a, b)
                   mapSnd = fmap
                   newloc =
+                    mapSnd (\y -> if yoff > (fromIntegral blockSize) then (y + 1) else y) $
                     mapFst (\x -> L.clamp x 1 (blocksPerRow - 1)) $
                     mapSnd (\x -> L.clamp x 1 rowsPerBoard) $
                     L.withPressedKey ipt GLFW.Key'Up (mapSnd (+1)) $

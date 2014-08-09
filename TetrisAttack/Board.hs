@@ -235,10 +235,9 @@ mkBoard tmap board' = do
          resGrid <- mapGridM (stepTileLogic timestep) runlogic
          let (mbTiles, newlogic) = unzipGrid resGrid
              tileRenderFns = inhibitGrid mbTiles
-             gridPositions =
-               generateGrid blocksPerRow rowsPerBoard $ \x y -> let
-                 yoff = if genRow then (yoffset - (fromIntegral blockSize)) else yoffset
-                 in blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
+             gridPositions = generateGrid blocksPerRow rowsPerBoard $ \x y -> let
+               yoff = if genRow then (yoffset - (fromIntegral blockSize)) else yoffset
+               in blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
 
          case tileRenderFns of
            Right fns -> do
