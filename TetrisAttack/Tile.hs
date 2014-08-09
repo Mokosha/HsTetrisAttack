@@ -5,6 +5,7 @@ module TetrisAttack.Tile (
   renderTile, blank, stationary, swapping, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
+import Control.Monad.Random
 import Control.Wire hiding ((.))
 import Data.Char (toLower)
 import qualified Data.Map as Map
@@ -63,12 +64,23 @@ loadTiles = let
 
 newtype TileGenerator = TileGen { generateTiles :: Int -> ([TileColor], TileGenerator) }
 
-fullRowTileGen :: TileGenerator
-fullRowTileGen = let
-  genHelper :: Int -> [TileColor] -> ([TileColor], TileGenerator)
-  genHelper n tiles = (take n tiles, TileGen $ \nt -> genHelper nt $ drop n tiles)
+fullRowTileGen :: RandomGen g => g -> TileGenerator
+fullRowTileGen firstRand = let
+  shuffle :: RandomGen g => [a] -> Rand g [a]
+  shuffle [] = return []
+  shuffle (x:xs) = do
+    r <- getRandomR (0, length xs)
+    shuffled <- shuffle xs
+    let (lead, trail) = splitAt r shuffled
+    return $ lead ++ (x:trail)
+
+  genHelper :: RandomGen g => g -> Int -> [TileColor] -> ([TileColor], TileGenerator)
+  genHelper rand n tiles = let
+    (result, newRand) = runRand (shuffle (take n tiles)) rand
+    in
+     (result, TileGen $ \nt -> genHelper newRand nt $ drop n tiles)
   in
-   TileGen $ \numTiles -> genHelper numTiles (cycle tilecolors)
+   TileGen $ \numTiles -> genHelper firstRand numTiles (cycle tilecolors)
 
 type TileLogic a = L.GameWire a (V2 Float -> L.GameMonad Tile)
 

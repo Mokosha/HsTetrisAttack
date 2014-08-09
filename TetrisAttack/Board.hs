@@ -4,6 +4,7 @@ module TetrisAttack.Board (
 ) where
 
 --------------------------------------------------------------------------------
+import Control.Monad.Random
 import Control.Monad.State.Strict
 import Control.Wire hiding ((.))
 import Data.List (nub)
@@ -17,8 +18,6 @@ import TetrisAttack.Constants
 import TetrisAttack.Cursor
 import TetrisAttack.Grid
 import TetrisAttack.Tile
-
-import qualified Debug.Trace as T
 --------------------------------------------------------------------------------
 
 type Board a = Grid2D (TileLogic a)
@@ -197,7 +196,8 @@ mkBoard tmap board' = do
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
   bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
   cur' <- mkCursor boardCenter
-  return (boardLogic fullRowTileGen cur' board' >>> (boardRender bg))
+  stdgen <- getStdGen
+  return (boardLogic (fullRowTileGen stdgen) cur' board' >>> (boardRender bg))
   where
     boardRender :: L.RenderObject -> L.GameWire BoardState BoardState
     boardRender ro = mkGen_ $ \tiles -> do
@@ -215,7 +215,7 @@ mkBoard tmap board' = do
 
       stepTileLogic :: L.TimeStep -> TileLogic a ->
                        L.GameMonad (Either () (V2 Float -> L.GameMonad Tile), TileLogic a)
-      stepTileLogic ts logic = stepWire logic ts (Right undefined) -- !FIXME!
+      stepTileLogic ts logic = stepWire logic ts (Right undefined)
 
       inhibitGrid :: Grid2D (Either () a) -> Either () (Grid2D a)
       inhibitGrid grid
