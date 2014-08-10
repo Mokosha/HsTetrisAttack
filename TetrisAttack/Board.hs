@@ -197,7 +197,7 @@ mkBoard tmap board' = do
   bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
   cur' <- mkCursor boardCenter
   stdgen <- getStdGen
-  return (boardLogic (fullRowTileGen stdgen) cur' board' >>> (boardRender bg))
+  return (boardLogic (shuffleTileGen stdgen) cur' board' >>> (boardRender bg))
   where
     boardRender :: L.RenderObject -> L.GameWire BoardState BoardState
     boardRender ro = mkGen_ $ \tiles -> do

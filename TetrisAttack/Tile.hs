@@ -1,7 +1,7 @@
 module TetrisAttack.Tile (
   TileColor(..), Tile(..), TileMap, TileLogic,
   loadTiles,
-  TileGenerator(..), fullRowTileGen,
+  TileGenerator(..), genTileGen, shuffleTileGen,
   renderTile, blank, stationary, swapping, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
@@ -51,6 +51,12 @@ type TileMap = Map.Map TileColor L.RenderObject
 tilecolors :: [TileColor]
 tilecolors = [Red, Green, Blue, Yellow, Purple]
 
+kNumTileColors :: Int
+kNumTileColors = length tilecolors
+
+tileintmap :: Map.Map Int TileColor
+tileintmap = Map.fromList $ zip [1,2..] tilecolors
+
 loadTiles :: IO (TileMap)
 loadTiles = let
   loadColor :: TileColor -> IO (L.RenderObject)
@@ -64,8 +70,23 @@ loadTiles = let
 
 newtype TileGenerator = TileGen { generateTiles :: Int -> ([TileColor], TileGenerator) }
 
-fullRowTileGen :: RandomGen g => g -> TileGenerator
-fullRowTileGen firstRand = let
+genTileGen :: RandomGen g => g -> TileGenerator
+genTileGen firstRand = TileGen $ genHelper firstRand
+  where
+    genTiles :: RandomGen g => Int -> Rand g [TileColor]
+    genTiles 0 = return []
+    genTiles n = do
+      r <- getRandomR (1, kNumTileColors)
+      moreTiles <- genTiles $ n - 1
+      return $ (tileintmap Map.! r) : moreTiles
+
+    genHelper :: RandomGen g => g -> Int -> ([TileColor], TileGenerator)
+    genHelper rand 0 = ([], TileGen $ genHelper rand)
+    genHelper rand n = (result, TileGen $ genHelper newRand)
+      where (result, newRand) = runRand (genTiles n) rand
+
+shuffleTileGen :: RandomGen g => g -> TileGenerator
+shuffleTileGen firstRand = let
   shuffle :: RandomGen g => [a] -> Rand g [a]
   shuffle [] = return []
   shuffle (x:xs) = do
