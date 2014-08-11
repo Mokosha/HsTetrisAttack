@@ -48,8 +48,9 @@ mkCursor loc' = do
                  else y)
       &&& (cursor' l)
       where cursor' oldloc = mkGenN $ \yoff -> do
-              ipt <- get
-              let mapFst f (a, b) = (f a, b)
+              gamestate <- get
+              let ipt = L.input gamestate
+                  mapFst f (a, b) = (f a, b)
                   mapSnd = fmap
                   newloc =
                     mapSnd (\y -> if yoff > (fromIntegral blockSize) then (y + 1) else y) $
@@ -59,7 +60,7 @@ mkCursor loc' = do
                     L.withPressedKey ipt GLFW.Key'Down (mapSnd (flip (-) 1)) $
                     L.withPressedKey ipt GLFW.Key'Left (mapFst (flip (-) 1)) $
                     L.withPressedKey ipt GLFW.Key'Right (mapFst (+1)) oldloc
-              put $ foldl (flip L.debounceKey) ipt
-                [GLFW.Key'Up, GLFW.Key'Down, GLFW.Key'Left, GLFW.Key'Right, GLFW.Key'Space]
+              put $ gamestate { L.input = foldl (flip L.debounceKey) ipt
+                [GLFW.Key'Up, GLFW.Key'Down, GLFW.Key'Left, GLFW.Key'Right, GLFW.Key'Space] }
               return (Right (newloc, L.isKeyPressed GLFW.Key'Space ipt), cursor' newloc)
 
