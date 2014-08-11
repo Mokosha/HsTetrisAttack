@@ -199,10 +199,11 @@ mkBoard tmap board' = do
 
   newRowTex <- L.createSolidTexture (0, 0, 0, 180)
   newRowOverlay <- L.createRenderObject L.quad (L.createTexturedMaterial newRowTex)
+  let rowOverlay = newRowOverlay { L.flags = (L.Transparent : (L.flags newRowOverlay)) }
   
   cur' <- mkCursor boardCenter
   stdgen <- getStdGen
-  return (boardLogic (shuffleTileGen stdgen) newRowOverlay cur' board' >>> (boardRender bg))
+  return (boardLogic (shuffleTileGen stdgen) rowOverlay cur' board' >>> (boardRender bg))
   where
     stepTileLogic :: L.TimeStep -> TileLogic a ->
                      L.GameMonad (Either () (V2 Float -> L.GameMonad Tile), TileLogic a)
