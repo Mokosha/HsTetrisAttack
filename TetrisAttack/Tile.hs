@@ -2,7 +2,8 @@ module TetrisAttack.Tile (
   TileColor(..), Tile(..), TileMap, TileLogic,
   loadTiles,
   TileGenerator(..), genTileGen, shuffleTileGen,
-  renderTile, blank, stationary, swapping, falling, stillFalling, vanishing
+  renderTileAtDepth, renderTile,
+  blank, stationary, swapping, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
 import Control.Monad.Random
@@ -105,13 +106,16 @@ shuffleTileGen firstRand = let
 
 type TileLogic a = L.GameWire a (V2 Float -> L.GameMonad Tile)
 
-renderTile :: L.RenderObject -> V2 Float -> L.GameMonad ()
-renderTile ro (V2 trx try) = let
-  xf = L.translate (V3 trx try $ renderDepth RenderLayer'Tiles) $
+renderTileAtDepth :: L.RenderObject -> V2 Float -> Float -> L.GameMonad ()
+renderTileAtDepth ro (V2 trx try) depth = let
+  xf = L.translate (V3 trx try $ depth) $
        L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 2))) $
        L.identity
   in
    L.addRenderAction xf ro
+
+renderTile :: L.RenderObject -> V2 Float -> L.GameMonad ()
+renderTile ro pos = renderTileAtDepth ro pos (renderDepth RenderLayer'Tiles)
 
 blank :: TileLogic a
 blank = pure (\_ -> return Blank)

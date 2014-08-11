@@ -8,6 +8,7 @@ import Control.Monad.Random
 import Control.Monad.State.Strict
 import Control.Wire hiding ((.))
 import Data.List (nub)
+import qualified Data.Map as Map
 import qualified Data.Vector as V
 import qualified Lambency as L
 import Linear.Vector
@@ -195,10 +196,25 @@ mkBoard tmap board' = do
 --  (Just bgTex) <- getDataFileName ("background" <.> "png") >>= L.loadTextureFromPNG
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
   bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
+
+  newRowTex <- L.createSolidTexture (0, 0, 0, 180)
+  newRowOverlay <- L.createRenderObject L.quad (L.createTexturedMaterial newRowTex)
+  
   cur' <- mkCursor boardCenter
   stdgen <- getStdGen
-  return (boardLogic (shuffleTileGen stdgen) cur' board' >>> (boardRender bg))
+  return (boardLogic (shuffleTileGen stdgen) newRowOverlay cur' board' >>> (boardRender bg))
   where
+    stepTileLogic :: L.TimeStep -> TileLogic a ->
+                     L.GameMonad (Either () (V2 Float -> L.GameMonad Tile), TileLogic a)
+    stepTileLogic ts logic = stepWire logic ts (Right undefined)
+
+    inhibitGrid :: Grid2D (Either () a) -> Either () (Grid2D a)
+    inhibitGrid grid
+      | V.any (\v -> V.any (\x -> case x of
+                               Left () -> True
+                               Right _ -> False) v) grid = Left ()
+      | otherwise = Right $ mapGrid (\(Right x) -> x) grid
+
     boardRender :: L.RenderObject -> L.GameWire BoardState BoardState
     boardRender ro = mkGen_ $ \tiles -> do
       let xf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $
@@ -208,41 +224,38 @@ mkBoard tmap board' = do
       L.addRenderAction xf ro
       return (Right tiles)
 
-    boardLogic :: TileGenerator -> L.GameWire Float Cursor -> Board a ->
+    renderNewRow :: L.RenderObject -> [TileColor] -> Float -> L.GameMonad ()
+    renderNewRow newRowOverlay row yoff =
+      sequence_ $ zipWith
+      (\c x -> do
+          let tilePos = ((blockCenter (x, 0)) ^+^ (V2 0 yoff))
+          renderTile (tmap Map.! c) tilePos
+          renderTileAtDepth newRowOverlay tilePos $
+            renderDepth RenderLayer'Tiles + 0.001
+          return ()
+      ) row [1,2..]
+
+    boardLogic :: TileGenerator -> L.RenderObject -> L.GameWire Float Cursor -> Board a ->
                   L.GameWire Float BoardState
-    boardLogic generator cursor board = let
-      (newRow, newGenerator) = generateTiles generator blocksPerRow
+    boardLogic generator newRowOverlay cursor board = mkGen $ \timestep yoffset -> do
+      (Right newCursor, nextCursorWire) <- stepWire cursor timestep (Right yoffset)
+      let (newRow, newGenerator) = generateTiles generator blocksPerRow
+          genRow = yoffset > (fromIntegral blockSize)
+          (newgen, runlogic) = if genRow
+                               then (newGenerator, addBlockRow tmap newRow board)
+                               else (generator, board)
+      resGrid <- mapGridM (stepTileLogic timestep) runlogic
+      let (mbTiles, newlogic) = unzipGrid resGrid
+          tileRenderFns = inhibitGrid mbTiles
+          gridPositions = generateGrid blocksPerRow rowsPerBoard $ \x y -> let
+            yoff = if genRow then (yoffset - (fromIntegral blockSize)) else yoffset
+            in blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
 
-      stepTileLogic :: L.TimeStep -> TileLogic a ->
-                       L.GameMonad (Either () (V2 Float -> L.GameMonad Tile), TileLogic a)
-      stepTileLogic ts logic = stepWire logic ts (Right undefined)
-
-      inhibitGrid :: Grid2D (Either () a) -> Either () (Grid2D a)
-      inhibitGrid grid
-        | V.any (\v -> V.any (\x -> case x of
-                                 Left () -> True
-                                 Right _ -> False) v) grid = Left ()
-        | otherwise = Right $ mapGrid (\(Right x) -> x) grid
-      in
-       mkGen $ \timestep yoffset -> do
-
-         (Right newCursor, nextCursorWire) <- stepWire cursor timestep (Right yoffset)
-         let genRow = yoffset > (fromIntegral blockSize)
-             (newgen, runlogic) = if genRow
-                                  then (newGenerator, addBlockRow tmap newRow board)
-                                  else (generator, board)
-
-         resGrid <- mapGridM (stepTileLogic timestep) runlogic
-         let (mbTiles, newlogic) = unzipGrid resGrid
-             tileRenderFns = inhibitGrid mbTiles
-             gridPositions = generateGrid blocksPerRow rowsPerBoard $ \x y -> let
-               yoff = if genRow then (yoffset - (fromIntegral blockSize)) else yoffset
-               in blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
-
-         case tileRenderFns of
-           Right fns -> do
-             st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
-             return (Right st, boardLogic newgen nextCursorWire $
-                               updateBoard tmap newCursor st newlogic)
-           Left _ -> return (Left (), boardLogic newgen nextCursorWire board)
+      renderNewRow newRowOverlay newRow yoffset
+      case tileRenderFns of
+        Right fns -> do
+          st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
+          return (Right st, boardLogic newgen newRowOverlay nextCursorWire $
+                            updateBoard tmap newCursor st newlogic)
+        Left _ -> return (Left (), boardLogic newgen newRowOverlay nextCursorWire board)
 
