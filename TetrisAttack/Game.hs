@@ -4,6 +4,7 @@ module TetrisAttack.Game (
 ) where
 
 --------------------------------------------------------------------------------
+import Control.Monad.Fix
 import Control.Wire hiding ((.))
 import qualified Data.Vector as V
 
@@ -23,18 +24,9 @@ analyzeTiles st
   | V.any (\v -> v V.! (rowsPerBoard - 1) /= Blank) st = GameOver
   | otherwise = Running
 
-semiLoop :: (Monad m, Monoid s, Monoid e) => c -> Wire s e m (a, c) (b, c) -> Wire s e m a b
-semiLoop initialValue loopWire = let
-  runLoop :: (Monad m, Monoid s, Monoid e) =>
-             Wire s e m (a, c) (b, c) -> s -> a -> c -> m (Either e b, Wire s e m a b)
-  runLoop wire ts ipt x = do
-    (result, nextWire) <- stepWire wire ts (Right (ipt, x))
-    case result of
-      Left i -> return (Left i, mkEmpty)
-      Right (value, nextX) ->
-        return (Right value, mkGen $ \ts' ipt' -> runLoop nextWire ts' ipt' nextX)
-  in
-   mkGen $ \ts input -> runLoop loopWire ts input initialValue
+delayedLoop :: (MonadFix m, Monoid s, Monoid e) =>
+               c -> Wire s e m (a, c) (b, c) -> Wire s e m a b
+delayedLoop initialValue loopWire = loop $ second (delay initialValue) >>> loopWire
 
 gameLoop :: L.GameWire Float BoardState -> L.GameWire (GameResult, Float) (BoardState, Float)
 gameLoop firstBoard = let
@@ -60,5 +52,5 @@ mkGame :: IO (L.GameWire GameResult GameResult)
 mkGame = do
   tmap <- loadTiles
   board <- mkBoard tmap $ initBoard tmap
-  return $ when (== Running) >>> (semiLoop 0 $ gameLoop board) >>> (arr analyzeTiles)
+  return $ when (== Running) >>> (delayedLoop 0 $ gameLoop board) >>> (arr analyzeTiles)
 
