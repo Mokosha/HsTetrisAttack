@@ -251,7 +251,7 @@ mkBoard tmap board' = do
           st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
           return (Right (newRow, st), boardWire newgen $ updateBoard tmap cur st newlogic)
 
-    boardLogic :: L.RenderObject -> L.RenderObject -> L.GameWire Float Cursor ->
+    boardLogic :: L.RenderObject -> L.RenderObject -> L.GameWire Float (L.GameMonad (), Cursor) ->
                   L.GameWire (Float, Cursor) ([TileColor], BoardState) ->
                   L.GameWire Float BoardState
     boardLogic newRowOverlay bg cursor board = let
@@ -261,10 +261,10 @@ mkBoard tmap board' = do
                L.identity
         in mkGen $ \timestep yoffset -> do
           L.addRenderAction bgxf bg
-          (Right cur, nextCursor) <- stepWire cursor timestep (Right yoffset)
+          (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep (Right yoffset)
           L.addClipRenderAction bgxf bg
           (boardResult, nextBoard) <- stepWire board timestep (Right (yoffset, cur))
-          case boardResult of
+          result <- case boardResult of
             Left _ -> do
               L.resetClip
               return (Left (), boardLogic newRowOverlay bg nextCursor nextBoard)
@@ -272,3 +272,5 @@ mkBoard tmap board' = do
               renderNewRow newRowOverlay newRow yoffset
               L.resetClip
               return (Right st, boardLogic newRowOverlay bg nextCursor nextBoard)
+          curRenderFn
+          return result

@@ -22,24 +22,22 @@ type Cursor = (GridLocation2D, Bool)
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
 
-mkCursor :: GridLocation2D -> IO (L.GameWire Float Cursor)
+mkCursor :: GridLocation2D -> IO (L.GameWire Float (L.GameMonad (), Cursor))
 mkCursor loc' = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTextureFromPNG
   ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
   return (cursor loc' >>> (cursorRenderer $ setTrans ro))
   where
-    cursorRenderer :: L.RenderObject -> L.GameWire (Float, Cursor) Cursor
-    cursorRenderer ro = mkGen_ $ \(yoffset, c@((curx, cury), _)) -> do
-      let bs :: Float
-          bs = fromIntegral blockSize
-          (V2 trx try) = 0.5 *^ (blockCenter (curx, cury) ^+^ (blockCenter (curx + 1, cury)))
-          xf :: L.Transform
-          xf = L.translate (V3 trx (try + yoffset) $ renderDepth RenderLayer'Cursor) $
-               L.nonuniformScale (V3 (bs*8/7) (bs*4/7) 1) $
-               L.identity
-
-      L.addRenderAction xf ro
-      return (Right c)
+    cursorRenderer :: L.RenderObject -> L.GameWire (Float, Cursor) (L.GameMonad (), Cursor)
+    cursorRenderer ro = mkSF_ $ \(yoffset, c) -> (mkRenderCursorFn yoffset c, c)
+      where mkRenderCursorFn yoffset ((curx, cury), _) = L.addRenderAction xf ro
+              where bs :: Float
+                    bs = fromIntegral blockSize
+                    (V2 trx try) = 0.5 *^ (blockCenter (curx, cury) ^+^ (blockCenter (curx + 1, cury)))
+                    xf :: L.Transform
+                    xf = L.translate (V3 trx (try + yoffset) $ renderDepth RenderLayer'Cursor) $
+                         L.nonuniformScale (V3 (bs*8/7) (bs*4/7) 1) $
+                         L.identity
       
     cursor :: GridLocation2D -> L.GameWire Float (Float, Cursor)
     cursor l =
