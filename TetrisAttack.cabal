@@ -30,7 +30,11 @@ executable TetrisAttack
                   TetrisAttack.Cursor
                   TetrisAttack.Game
                   TetrisAttack.Grid
-  ghc-options:    -Wall -rtsopts -dynamic
+  if os(windows)                                    
+    ghc-options:    -Wall -rtsopts
+  else
+    ghc-options:    -Wall -rtsopts -dynamic
+        
   build-depends:  base > 4.6,
                   GLFW-b,
                   lambency,
