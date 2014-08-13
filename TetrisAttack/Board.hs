@@ -201,9 +201,9 @@ mkBoard tmap board' = do
   newRowOverlay <- L.createRenderObject L.quad (L.createTexturedMaterial newRowTex)
   let rowOverlay = newRowOverlay { L.flags = (L.Transparent : (L.flags newRowOverlay)) }
   
-  cur' <- mkCursor boardCenter
+  cursor <- mkCursor boardCenter
   stdgen <- getStdGen
-  return (boardLogic (shuffleTileGen stdgen) rowOverlay cur' board' >>> (boardRender bg))
+  return $ boardLogic rowOverlay bg cursor (boardWire (shuffleTileGen stdgen) board')
   where
     stepTileLogic :: L.TimeStep -> TileLogic a ->
                      L.GameMonad (Either () (V2 Float -> L.GameMonad Tile), TileLogic a)
@@ -216,15 +216,6 @@ mkBoard tmap board' = do
                                Right _ -> False) v) grid = Left ()
       | otherwise = Right $ mapGrid (\(Right x) -> x) grid
 
-    boardRender :: L.RenderObject -> L.GameWire BoardState BoardState
-    boardRender ro = mkGen_ $ \tiles -> do
-      let xf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $
-                            renderDepth RenderLayer'Board) $
-               L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
-               L.identity
-      L.addRenderAction xf ro
-      return (Right tiles)
-
     renderNewRow :: L.RenderObject -> [TileColor] -> Float -> L.GameMonad ()
     renderNewRow newRowOverlay row yoff =
       sequence_ $ zipWith
@@ -236,10 +227,8 @@ mkBoard tmap board' = do
           return ()
       ) row [1,2..]
 
-    boardLogic :: TileGenerator -> L.RenderObject -> L.GameWire Float Cursor -> Board a ->
-                  L.GameWire Float BoardState
-    boardLogic generator newRowOverlay cursor board = mkGen $ \timestep yoffset -> do
-      (Right newCursor, nextCursorWire) <- stepWire cursor timestep (Right yoffset)
+    boardWire :: TileGenerator -> Board a -> L.GameWire (Float, Cursor) ([TileColor], BoardState)
+    boardWire generator board = mkGen $ \timestep (yoffset, cur) -> do
       let (newRow, newGenerator) = generateTiles generator blocksPerRow
           genRow = yoffset > (fromIntegral blockSize)
           (newgen, runlogic) = if genRow
@@ -248,15 +237,38 @@ mkBoard tmap board' = do
       resGrid <- mapGridM (stepTileLogic timestep) runlogic
       let (mbTiles, newlogic) = unzipGrid resGrid
           tileRenderFns = inhibitGrid mbTiles
-          gridPositions = generateGrid blocksPerRow rowsPerBoard $ \x y -> let
-            yoff = if genRow then (yoffset - (fromIntegral blockSize)) else yoffset
-            in blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
+          gridPositions =
+                generateGrid blocksPerRow rowsPerBoard $ \x y ->
+                blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
+                where
+                  yoff = if (yoffset > (fromIntegral blockSize))
+                         then (yoffset - (fromIntegral blockSize))
+                         else yoffset
 
-      renderNewRow newRowOverlay newRow yoffset
       case tileRenderFns of
+        Left _ -> return (Left (), boardWire generator board)
         Right fns -> do
           st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
-          return (Right st, boardLogic newgen newRowOverlay nextCursorWire $
-                            updateBoard tmap newCursor st newlogic)
-        Left _ -> return (Left (), boardLogic newgen newRowOverlay nextCursorWire board)
+          return (Right (newRow, st), boardWire newgen $ updateBoard tmap cur st newlogic)
 
+    boardLogic :: L.RenderObject -> L.RenderObject -> L.GameWire Float Cursor ->
+                  L.GameWire (Float, Cursor) ([TileColor], BoardState) ->
+                  L.GameWire Float BoardState
+    boardLogic newRowOverlay bg cursor board = let
+        bgxf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $
+                            renderDepth RenderLayer'Board) $
+               L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
+               L.identity
+        in mkGen $ \timestep yoffset -> do
+          L.addRenderAction bgxf bg
+          (Right cur, nextCursor) <- stepWire cursor timestep (Right yoffset)
+          L.addClipRenderAction bgxf bg
+          (boardResult, nextBoard) <- stepWire board timestep (Right (yoffset, cur))
+          case boardResult of
+            Left _ -> do
+              L.resetClip
+              return (Left (), boardLogic newRowOverlay bg nextCursor nextBoard)
+            Right (newRow, st) -> do
+              renderNewRow newRowOverlay newRow yoffset
+              L.resetClip
+              return (Right st, boardLogic newRowOverlay bg nextCursor nextBoard)
