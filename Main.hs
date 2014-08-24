@@ -2,6 +2,9 @@ module Main (main) where
 
 --------------------------------------------------------------------------------
 import Control.Wire hiding ((.))
+
+import qualified Graphics.UI.GLFW as GLFW
+
 import qualified Lambency as L
 import Linear.Vector
 
@@ -21,7 +24,7 @@ initGame = do
     L.staticGeometry = [],
     L.mainCamera = camera,
     L.dynamicLights = [],
-    L.gameLogic = g }
+    L.gameLogic = g >>> (L.quitWire GLFW.Key'Q) }
 
 main :: IO ()
 main = do
