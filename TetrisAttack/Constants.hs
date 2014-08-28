@@ -78,7 +78,7 @@ blockCenter loc = let
    V2 (0.5 * (fromIntegral blockSize) + x) (0.5 * (fromIntegral blockSize) + y)
 
 boardCenter :: (Int, Int)
-boardCenter = ((blocksPerRow - 1) `div` 2, (rowsPerBoard - 1) `div` 2)
+boardCenter = (blocksPerRow `div` 2, rowsPerBoard `div` 2)
 
 data RenderLayer = RenderLayer'Board
                  | RenderLayer'Tiles

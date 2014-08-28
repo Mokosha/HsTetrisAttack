@@ -3,7 +3,6 @@ module TetrisAttack.Cursor (
 ) where
 
 --------------------------------------------------------------------------------
-import Control.Monad.RWS.Strict hiding (when)
 import Control.Wire hiding ((.), id)
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Lambency as L
@@ -12,53 +11,74 @@ import Linear.V2
 import Linear.V3
 import System.FilePath
 
+import FRP.Netwire.Input
+
 import Paths_TetrisAttack
 import TetrisAttack.Constants
 import TetrisAttack.Grid
 --------------------------------------------------------------------------------
-
 type Cursor = (GridLocation2D, Bool)
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
 
+renderCursor :: L.RenderObject -> Float -> Cursor -> L.GameMonad ()
+renderCursor ro yoffset ((curx, cury), _) = L.addRenderAction xf ro
+  where
+    bs :: Float
+    bs = fromIntegral blockSize
+
+    (V2 trx try) = 0.5 *^ (blockCenter (curx, cury) ^+^ (blockCenter (curx + 1, cury)))
+
+    xf :: L.Transform
+    xf = L.translate (V3 trx (try + yoffset) $ renderDepth RenderLayer'Cursor) $
+         L.nonuniformScale (V3 (bs*8/7) (bs*4/7) 1) $
+         L.identity
+
+offsetWire :: L.GameWire Float Float
+offsetWire = let
+  bs = fromIntegral blockSize
+  in
+   (when (> bs) - (pure bs)) <|> mkId
+
+mapFst :: (a -> c) -> (a, b) -> (c, b)
+mapFst f (a, b) = (f a, b)
+
+mapSnd :: (b -> c) -> (a, b) -> (a, c)
+mapSnd = fmap
+
+keyW :: GLFW.Key -> (GridLocation2D -> GridLocation2D) -> L.GameWire GridLocation2D GridLocation2D
+keyW key fn = (keyDebounced key >>> (arr fn)) <|> mkId
+
+inputWire :: L.GameWire GridLocation2D Cursor
+inputWire =
+  (keyW GLFW.Key'Up $ mapSnd (+1)) >>>
+  (keyW GLFW.Key'Down $ mapSnd (flip (-) 1)) >>>
+  (keyW GLFW.Key'Left $ mapFst (flip (-) 1)) >>>
+  (keyW GLFW.Key'Right $ mapFst (+1)) >>>
+  (arr $ \(x, y) -> (L.clamp x 1 (blocksPerRow - 1), L.clamp y 1 rowsPerBoard)) &&&
+  ((keyDebounced GLFW.Key'Space >>> (pure True)) <|> (pure False))
+
+modulatePosition :: Float -> Cursor -> Cursor
+modulatePosition yoff c
+  | yoff > (fromIntegral blockSize) = mapFst (mapSnd (+1)) c
+  | otherwise = c
+
 mkCursor :: GridLocation2D -> IO (L.GameWire Float (L.GameMonad (), Cursor))
 mkCursor loc' = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTextureFromPNG
   ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
-  return (cursor loc' >>> (cursorRenderer $ setTrans ro))
+  return (cursorLogic >>> (cursorRenderer $ setTrans ro))
   where
     cursorRenderer :: L.RenderObject -> L.GameWire (Float, Cursor) (L.GameMonad (), Cursor)
-    cursorRenderer ro = mkSF_ $ \(yoffset, c) -> (mkRenderCursorFn yoffset c, c)
-      where mkRenderCursorFn yoffset ((curx, cury), _) = L.addRenderAction xf ro
-              where bs :: Float
-                    bs = fromIntegral blockSize
-                    (V2 trx try) = 0.5 *^ (blockCenter (curx, cury) ^+^ (blockCenter (curx + 1, cury)))
-                    xf :: L.Transform
-                    xf = L.translate (V3 trx (try + yoffset) $ renderDepth RenderLayer'Cursor) $
-                         L.nonuniformScale (V3 (bs*8/7) (bs*4/7) 1) $
-                         L.identity
-      
-    cursor :: GridLocation2D -> L.GameWire Float (Float, Cursor)
-    cursor l =
-      arr (\y -> if y > (fromIntegral blockSize)
-                 then y - (fromIntegral blockSize)
-                 else y)
-      &&& (cursor' l)
-      where cursor' oldloc = mkGenN $ \yoff -> do
-              gamestate <- get
-              let ipt = L.input gamestate
-                  mapFst f (a, b) = (f a, b)
-                  mapSnd = fmap
-                  newloc =
-                    mapSnd (\y -> if yoff > (fromIntegral blockSize) then (y + 1) else y) $
-                    mapFst (\x -> L.clamp x 1 (blocksPerRow - 1)) $
-                    mapSnd (\x -> L.clamp x 1 rowsPerBoard) $
-                    L.withPressedKey ipt GLFW.Key'Up (mapSnd (+1)) $
-                    L.withPressedKey ipt GLFW.Key'Down (mapSnd (flip (-) 1)) $
-                    L.withPressedKey ipt GLFW.Key'Left (mapFst (flip (-) 1)) $
-                    L.withPressedKey ipt GLFW.Key'Right (mapFst (+1)) oldloc
-              put $ gamestate { L.input = foldl (flip L.debounceKey) ipt
-                [GLFW.Key'Up, GLFW.Key'Down, GLFW.Key'Left, GLFW.Key'Right, GLFW.Key'Space] }
-              return (Right (newloc, L.isKeyPressed GLFW.Key'Space ipt), cursor' newloc)
+    cursorRenderer ro = mkSF_ $ \(yoffset, c) -> (renderCursor ro yoffset c, c)
 
+    cursorLogic :: L.GameWire Float (Float, Cursor)
+    cursorLogic = offsetWire &&& cursorWire
+      where
+        handleIpt :: L.GameWire Cursor Cursor
+        handleIpt = (arr fst) >>> (delay loc') >>> inputWire
+
+        cursorWire :: L.GameWire Float Cursor
+        cursorWire = loop $ second handleIpt >>>
+                     (arr $ \(y, x) -> let z = modulatePosition y x in (z, z))

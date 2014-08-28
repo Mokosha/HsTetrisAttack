@@ -43,6 +43,7 @@ executable TetrisAttack
                   containers,
                   random, MonadRandom,
                   netwire >= 5.0.0,
+                  netwire-input,
                   mtl >= 2.1.2,
                   filepath
   -- hs-source-dirs:      

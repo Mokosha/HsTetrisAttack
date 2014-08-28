@@ -236,9 +236,7 @@ mkBoard tmap board' = do
                 generateGrid blocksPerRow rowsPerBoard $ \x y ->
                 blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
                 where
-                  yoff = if (yoffset > (fromIntegral blockSize))
-                         then (yoffset - (fromIntegral blockSize))
-                         else yoffset
+                  yoff = if genRow then (yoffset - (fromIntegral blockSize)) else yoffset
 
       case tileRenderFns of
         Left _ -> return (Left (), boardWire generator board)
