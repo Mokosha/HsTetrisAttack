@@ -47,15 +47,15 @@ mapFst f (a, b) = (f a, b)
 mapSnd :: (b -> c) -> (a, b) -> (a, c)
 mapSnd = fmap
 
-keyW :: GLFW.Key -> (GridLocation2D -> GridLocation2D) -> L.GameWire GridLocation2D GridLocation2D
+keyW :: GLFW.Key -> (a -> a) -> L.GameWire a a
 keyW key fn = (keyDebounced key >>> (arr fn)) <|> mkId
 
 inputWire :: L.GameWire GridLocation2D Cursor
 inputWire =
-  (keyW GLFW.Key'Up $ mapSnd (+1)) >>>
-  (keyW GLFW.Key'Down $ mapSnd (flip (-) 1)) >>>
-  (keyW GLFW.Key'Left $ mapFst (flip (-) 1)) >>>
-  (keyW GLFW.Key'Right $ mapFst (+1)) >>>
+  (second $ keyW GLFW.Key'Up (+1)) >>>
+  (second $ keyW GLFW.Key'Down (flip (-) 1)) >>>
+  (first $ keyW GLFW.Key'Left (flip (-) 1)) >>>
+  (first $ keyW GLFW.Key'Right (+1)) >>>
   (arr $ \(x, y) -> (L.clamp x 1 (blocksPerRow - 1), L.clamp y 1 rowsPerBoard)) &&&
   ((keyDebounced GLFW.Key'Space >>> (pure True)) <|> (pure False))
 
