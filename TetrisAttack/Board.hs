@@ -201,14 +201,14 @@ mkBoard tmap board' = do
   return $ boardLogic rowOverlay bg cursor (boardWire (shuffleTileGen stdgen) board')
   where
     stepTileLogic :: L.TimeStep -> TileLogic a ->
-                     L.GameMonad (Either () (V2 Float -> L.GameMonad Tile), TileLogic a)
+                     L.GameMonad (Either String (V2 Float -> L.GameMonad Tile), TileLogic a)
     stepTileLogic ts logic = stepWire logic ts (Right undefined)
 
-    inhibitGrid :: Grid2D (Either () a) -> Either () (Grid2D a)
+    inhibitGrid :: Monoid e => Grid2D (Either e a) -> Either e (Grid2D a)
     inhibitGrid grid
       | V.any (\v -> V.any (\x -> case x of
-                               Left () -> True
-                               Right _ -> False) v) grid = Left ()
+                               Left _ -> True
+                               Right _ -> False) v) grid = Left mempty
       | otherwise = Right $ mapGrid (\(Right x) -> x) grid
 
     renderNewRow :: L.RenderObject -> [TileColor] -> Float -> L.GameMonad ()
@@ -239,7 +239,7 @@ mkBoard tmap board' = do
                   yoff = if genRow then (yoffset - (fromIntegral blockSize)) else yoffset
 
       case tileRenderFns of
-        Left _ -> return (Left (), boardWire generator board)
+        Left _ -> return (Left mempty, boardWire generator board)
         Right fns -> do
           st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
           return (Right (newRow, st), boardWire newgen $ updateBoard tmap cur st newlogic)
@@ -260,7 +260,7 @@ mkBoard tmap board' = do
           result <- case boardResult of
             Left _ -> do
               L.resetClip
-              return (Left (), boardLogic newRowOverlay bg nextCursor nextBoard)
+              return (Left mempty, boardLogic newRowOverlay bg nextCursor nextBoard)
             Right (newRow, st) -> do
               renderNewRow newRowOverlay newRow yoffset
               L.resetClip

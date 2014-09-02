@@ -31,15 +31,15 @@ delayedLoop initialValue loopWire = loop $ second (delay initialValue) >>> loopW
 gameLoop :: L.GameWire Float BoardState -> L.GameWire (GameResult, Float) (BoardState, Float)
 gameLoop firstBoard = let
   runBoard :: GameResult -> Float -> L.TimeStep -> L.GameWire Float BoardState ->
-              L.GameMonad (Either () (BoardState, Float),
+              L.GameMonad (Either String (BoardState, Float),
                            L.GameWire (GameResult, Float) (BoardState, Float))
-  runBoard GameOver _ _ b = return (Left (), loopFn b)
+  runBoard GameOver _ _ b = return (Left mempty, loopFn b)
   runBoard Running flt ts board = do
     let blockSzF = (fromIntegral blockSize)
         nextFlt = if flt > blockSzF then (flt - blockSzF) else (flt + 10*(dtime ts))
     (boardState, nextBoard) <- stepWire board ts (Right flt)
     case boardState of
-      Left () -> return (Left (), loopFn nextBoard)
+      Left exception -> return (Left exception, loopFn nextBoard)
       Right bs -> return (Right (bs, nextFlt), loopFn nextBoard)
 
   -- !FIXME! The rate at which the board rises should be dynamic

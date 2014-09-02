@@ -129,11 +129,11 @@ countFromOne :: Float -> L.GameWire Float Float
 countFromOne end = (countToOne end) >>> (mkSF_ (1.0 -))
 
 countToOne :: Float -> L.GameWire Float Float
-countToOne end = mkPure_ $ \t ->
-  if t > end then
-    Left ()
-  else
-    Right $ t / end
+countToOne end = mkPure_ fn
+  where
+    fn t
+      | t > end = Left mempty
+      | otherwise = Right $ t / end
 
 timer :: Float -> L.GameWire a Float
 timer duration = timeF >>> (countFromOne duration)
