@@ -66,7 +66,7 @@ modulatePosition yoff c
 
 mkCursor :: GridLocation2D -> IO (L.GameWire Float (L.GameMonad (), Cursor))
 mkCursor loc' = do
-  (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTextureFromPNG
+  (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTexture
   ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
   return (cursorLogic >>> (cursorRenderer $ setTrans ro))
   where

@@ -63,7 +63,7 @@ loadTiles = let
   loadColor :: TileColor -> IO (L.RenderObject)
   loadColor color = do
     let filename = concat ["element_", map toLower $ show color, "_square" <.> "png"]
-    (Just tex) <- getDataFileName filename >>= L.loadTextureFromPNG
+    (Just tex) <- getDataFileName filename >>= L.loadTexture
     L.createRenderObject L.quad (L.createTexturedMaterial tex)
   in do
     ros <- mapM loadColor tilecolors
