@@ -36,10 +36,7 @@ renderCursor ro yoffset ((curx, cury), _) = L.addRenderAction xf ro
          L.identity
 
 offsetWire :: L.GameWire Float Float
-offsetWire = let
-  bs = fromIntegral blockSize
-  in
-   (when (> bs) - (pure bs)) <|> mkId
+offsetWire = (when (> bs) - (pure bs)) <|> mkId where bs = fromIntegral blockSize
 
 mapFst :: (a -> c) -> (a, b) -> (c, b)
 mapFst f (a, b) = (f a, b)
