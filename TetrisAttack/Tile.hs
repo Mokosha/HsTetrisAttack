@@ -2,7 +2,7 @@ module TetrisAttack.Tile (
   TileColor(..), Tile(..), TileMap, TileLogic,
   loadTiles,
   TileGenerator(..), genTileGen, shuffleTileGen,
-  renderTileAtDepth, renderTile,
+  renderTileAtDepth,
   blank, stationary, swapping, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
@@ -47,7 +47,7 @@ data Tile =
   | FallingOut
   deriving (Eq, Show, Ord, Read)
 
-type TileMap = Map.Map TileColor L.RenderObject
+type TileMap = Map.Map TileColor L.Sprite
 
 tilecolors :: [TileColor]
 tilecolors = [Red, Green, Blue, Yellow, Purple]
@@ -60,14 +60,14 @@ tileintmap = Map.fromList $ zip [1,2..] tilecolors
 
 loadTiles :: IO (TileMap)
 loadTiles = let
-  loadColor :: TileColor -> IO (L.RenderObject)
+  loadColor :: TileColor -> IO (L.Sprite)
   loadColor color = do
     let filename = concat ["element_", map toLower $ show color, "_square" <.> "png"]
-    (Just tex) <- getDataFileName filename >>= L.loadTexture
-    L.createRenderObject L.quad (L.createTexturedMaterial tex)
+    (Just sprite) <- getDataFileName filename >>= L.loadStaticSprite
+    return sprite
   in do
-    ros <- mapM loadColor tilecolors
-    return $ Map.fromList $ zip tilecolors ros
+    ss <- mapM loadColor tilecolors
+    return $ Map.fromList $ zip tilecolors ss
 
 newtype TileGenerator = TileGen { generateTiles :: Int -> ([TileColor], TileGenerator) }
 
@@ -114,15 +114,12 @@ renderTileAtDepth ro (V2 trx try) depth = let
   in
    L.addRenderAction xf ro
 
-renderTile :: L.RenderObject -> V2 Float -> L.GameMonad ()
-renderTile ro pos = renderTileAtDepth ro pos (renderDepth RenderLayer'Tiles)
-
 blank :: TileLogic a
 blank = pure (\_ -> return Blank)
 
 stationary :: TileMap -> TileColor -> TileLogic a
 stationary m color = mkSF_ $ \_ -> \pos -> do
-  renderTile (m Map.! color) pos
+  L.renderSprite (m Map.! color) (renderDepth RenderLayer'Tiles) pos
   return $ Stationary color
 
 countFromOne :: Float -> L.GameWire Float Float
@@ -149,7 +146,7 @@ swapping m color movingLeft =
               if movingLeft
                 then (V2 (px - (fromIntegral blockSize)) py)
                 else (V2 (px + (fromIntegral blockSize)) py)
-        renderTile (m Map.! color) (lerp t otherPos pos)
+        L.renderSprite (m Map.! color) (renderDepth RenderLayer'Tiles) (lerp t otherPos pos)
         return Moving
   in
    (timer gSwapTime >>> smoothstep >>> movingWire) --> (stationary m color)
@@ -166,7 +163,7 @@ falling m color =
       movingWire = mkSF_ $ \(lastFrame, t) -> \pos@(V2 px py) -> do
         let renderPos = lerp t pos (V2 px $ py + (fromIntegral blockSize))
             (V2 _ yoff) = renderPos ^-^ pos
-        renderTile (m Map.! color) renderPos
+        L.renderSprite (m Map.! color) (renderDepth RenderLayer'Tiles) renderPos
         return $ Falling lastFrame yoff color
   in
    (awareTimer gTileFallTime >>> movingWire) --> (stationary m color)
@@ -182,7 +179,7 @@ stillFalling m color offset =
 
       movingWire :: L.GameWire (Bool, Float) (V2 Float -> L.GameMonad Tile)
       movingWire = mkSF_ $ \(lastFrame, yoff) -> \(V2 px py) -> do
-        renderTile (m Map.! color) (V2 px (py + yoff))
+        L.renderSprite (m Map.! color) (renderDepth RenderLayer'Tiles) (V2 px (py + yoff))
         return $ Falling lastFrame yoff color
   in
    ((reduce $ fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color)
@@ -193,13 +190,8 @@ vanishing m color = let
   alpha = timer gVanishTime
 
   render :: L.GameWire Float (V2 Float -> L.GameMonad Tile)
-  render = mkSF_ $ \a -> \pos -> let
-    setAlpha ro = ro { L.material = Map.insert "alpha" (L.FloatVal a) (L.material ro),
-                       L.flags = if a < 1.0
-                                 then (L.Transparent : (L.flags ro))
-                                 else (L.flags ro) }
-    in do
-      renderTile (setAlpha $ m Map.! color) pos
+  render = mkSF_ $ \a -> \pos -> do
+      L.renderSpriteWithAlpha (m Map.! color) a (renderDepth RenderLayer'Tiles) pos
       return Vanishing
 
   in

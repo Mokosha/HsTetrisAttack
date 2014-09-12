@@ -216,7 +216,7 @@ mkBoard tmap board' = do
       sequence_ $ zipWith
       (\c x -> do
           let tilePos = ((blockCenter (x, 0)) ^+^ (V2 0 yoff))
-          renderTile (tmap Map.! c) tilePos
+          L.renderSprite (tmap Map.! c) (renderDepth RenderLayer'Tiles) tilePos
           renderTileAtDepth newRowOverlay tilePos $
             renderDepth RenderLayer'Tiles + 0.001
           return ()
