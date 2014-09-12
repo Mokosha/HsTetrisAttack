@@ -119,7 +119,7 @@ blank = pure (\_ -> return Blank)
 
 stationary :: TileMap -> TileColor -> TileLogic a
 stationary m color = mkSF_ $ \_ -> \pos -> do
-  L.renderSprite (m Map.! color) (renderDepth RenderLayer'Tiles) pos
+  L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) pos
   return $ Stationary color
 
 countFromOne :: Float -> L.GameWire Float Float
@@ -146,7 +146,7 @@ swapping m color movingLeft =
               if movingLeft
                 then (V2 (px - (fromIntegral blockSize)) py)
                 else (V2 (px + (fromIntegral blockSize)) py)
-        L.renderSprite (m Map.! color) (renderDepth RenderLayer'Tiles) (lerp t otherPos pos)
+        L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) (lerp t otherPos pos)
         return Moving
   in
    (timer gSwapTime >>> smoothstep >>> movingWire) --> (stationary m color)
@@ -163,7 +163,7 @@ falling m color =
       movingWire = mkSF_ $ \(lastFrame, t) -> \pos@(V2 px py) -> do
         let renderPos = lerp t pos (V2 px $ py + (fromIntegral blockSize))
             (V2 _ yoff) = renderPos ^-^ pos
-        L.renderSprite (m Map.! color) (renderDepth RenderLayer'Tiles) renderPos
+        L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) renderPos
         return $ Falling lastFrame yoff color
   in
    (awareTimer gTileFallTime >>> movingWire) --> (stationary m color)
@@ -179,7 +179,7 @@ stillFalling m color offset =
 
       movingWire :: L.GameWire (Bool, Float) (V2 Float -> L.GameMonad Tile)
       movingWire = mkSF_ $ \(lastFrame, yoff) -> \(V2 px py) -> do
-        L.renderSprite (m Map.! color) (renderDepth RenderLayer'Tiles) (V2 px (py + yoff))
+        L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) (V2 px (py + yoff))
         return $ Falling lastFrame yoff color
   in
    ((reduce $ fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color)
@@ -191,7 +191,7 @@ vanishing m color = let
 
   render :: L.GameWire Float (V2 Float -> L.GameMonad Tile)
   render = mkSF_ $ \a -> \pos -> do
-      L.renderSpriteWithAlpha (m Map.! color) a (renderDepth RenderLayer'Tiles) pos
+      L.renderSpriteWithAlpha (m Map.! color) a tileSz (renderDepth RenderLayer'Tiles) pos
       return Vanishing
 
   in

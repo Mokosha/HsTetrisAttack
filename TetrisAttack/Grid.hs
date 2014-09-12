@@ -4,12 +4,17 @@ module TetrisAttack.Grid (
   GridWalker(..),
   walkRows, walkColumns,
   mapGrid, mapGridM, mapGridM_, imapGrid, imapGridM, imapGridM_, zipGrid, unzipGrid,
-  GridUpdater(..), updateColumns
+  GridUpdater(..), updateColumns,
+  eitherGrid
 ) where
 
 --------------------------------------------------------------------------------
 
+import Data.Either
+import Data.Monoid
+
 import qualified Data.Vector as V
+
 
 --------------------------------------------------------------------------------
 
@@ -103,3 +108,22 @@ newtype GridUpdater a b = GridUpdater { updateGridValue :: a -> (b, GridUpdater 
 updateColumns :: GridUpdater a b -> Grid2D a -> Grid2D b
 updateColumns updater = V.map updateColumn
   where updateColumn = statefulScanl updateGridValue updater
+
+eitherGrid :: Monoid e => Grid2D (Either e a) -> Either e (Grid2D a)
+eitherGrid grid = let
+  collectEithers :: Monoid e => Either e a -> Maybe (Either e a) -> GridWalker (Either e a) (Either e a)
+  collectEithers x Nothing = Result x
+  collectEithers (Right _) (Just (Left y)) = Walker $ collectEithers (Left y)
+  collectEithers (Left x) (Just (Left y)) = Walker $ collectEithers (Left $ x `mappend` y)
+  collectEithers (Right x) (Just (Right _)) = Walker $ collectEithers (Right x)
+  collectEithers (Left x) (Just (Right _)) = Walker $ collectEithers (Left x)
+
+  mapEither :: Monoid e => Either e a -> e
+  mapEither (Left x) = x
+  mapEither _ = mempty
+
+  result = walkRows grid $ Walker $ collectEithers (Right undefined)
+  in
+   if (any isLeft result)
+   then Left . mconcat $ map mapEither result
+   else Right $ mapGrid (either undefined id) grid

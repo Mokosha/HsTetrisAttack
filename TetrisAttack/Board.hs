@@ -186,42 +186,32 @@ updateBoard m c st = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((
 addBlockRow :: TileMap -> [TileColor] -> Board a -> Board a
 addBlockRow tmap row = V.zipWith V.cons (V.map (stationary tmap) (V.fromList row))
 
+stepTileLogic :: L.TimeStep -> TileLogic a ->
+                 L.GameMonad (Either String (V2 Float -> L.GameMonad Tile), TileLogic a)
+stepTileLogic ts logic = stepWire logic ts (Right undefined)
+
+renderNewRow :: L.Sprite -> [L.Sprite] -> Float -> L.GameMonad ()
+renderNewRow newRowOverlay row yoff =
+  sequence_ $ zipWith
+  (\s x -> do
+      let tilePos = blockCenter (x, 0) ^+^ (V2 0 yoff)
+      L.renderSprite s tileSz (renderDepth RenderLayer'Tiles) tilePos
+      L.renderSprite newRowOverlay tileSz (renderDepth RenderLayer'Tiles + 0.001) tilePos
+      return ()
+  ) row [1,2..]
+
 mkBoard :: TileMap -> Board a -> IO (L.GameWire Float BoardState)
 mkBoard tmap board' = do
 --  (Just bgTex) <- getDataFileName ("background" <.> "png") >>= L.loadTextureFromPNG
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
   bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
 
-  newRowTex <- L.createSolidTexture (0, 0, 0, 180)
-  newRowOverlay <- L.createRenderObject L.quad (L.createTexturedMaterial newRowTex)
-  let rowOverlay = newRowOverlay { L.flags = (L.Transparent : (L.flags newRowOverlay)) }
+  newRowOverlay <- L.createSolidTexture (0, 0, 0, 180) >>= L.loadStaticSpriteWithTexture
   
   cursor <- mkCursor boardCenter
   stdgen <- getStdGen
-  return $ boardLogic rowOverlay bg cursor (boardWire (shuffleTileGen stdgen) board')
+  return $ boardLogic newRowOverlay bg cursor $ boardWire (shuffleTileGen stdgen) board'
   where
-    stepTileLogic :: L.TimeStep -> TileLogic a ->
-                     L.GameMonad (Either String (V2 Float -> L.GameMonad Tile), TileLogic a)
-    stepTileLogic ts logic = stepWire logic ts (Right undefined)
-
-    inhibitGrid :: Monoid e => Grid2D (Either e a) -> Either e (Grid2D a)
-    inhibitGrid grid
-      | V.any (\v -> V.any (\x -> case x of
-                               Left _ -> True
-                               Right _ -> False) v) grid = Left mempty
-      | otherwise = Right $ mapGrid (\(Right x) -> x) grid
-
-    renderNewRow :: L.RenderObject -> [TileColor] -> Float -> L.GameMonad ()
-    renderNewRow newRowOverlay row yoff =
-      sequence_ $ zipWith
-      (\c x -> do
-          let tilePos = ((blockCenter (x, 0)) ^+^ (V2 0 yoff))
-          L.renderSprite (tmap Map.! c) (renderDepth RenderLayer'Tiles) tilePos
-          renderTileAtDepth newRowOverlay tilePos $
-            renderDepth RenderLayer'Tiles + 0.001
-          return ()
-      ) row [1,2..]
-
     boardWire :: TileGenerator -> Board a -> L.GameWire (Float, Cursor) ([TileColor], BoardState)
     boardWire generator board = mkGen $ \timestep (yoffset, cur) -> do
       let (newRow, newGenerator) = generateTiles generator blocksPerRow
@@ -231,7 +221,7 @@ mkBoard tmap board' = do
                                else (generator, board)
       resGrid <- mapGridM (stepTileLogic timestep) runlogic
       let (mbTiles, newlogic) = unzipGrid resGrid
-          tileRenderFns = inhibitGrid mbTiles
+          tileRenderFns = eitherGrid mbTiles
           gridPositions =
                 generateGrid blocksPerRow rowsPerBoard $ \x y ->
                 blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
@@ -244,7 +234,7 @@ mkBoard tmap board' = do
           st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
           return (Right (newRow, st), boardWire newgen $ updateBoard tmap cur st newlogic)
 
-    boardLogic :: L.RenderObject -> L.RenderObject -> L.GameWire Float (L.GameMonad (), Cursor) ->
+    boardLogic :: L.Sprite -> L.RenderObject -> L.GameWire Float (L.GameMonad (), Cursor) ->
                   L.GameWire (Float, Cursor) ([TileColor], BoardState) ->
                   L.GameWire Float BoardState
     boardLogic newRowOverlay bg cursor board = let
@@ -262,7 +252,7 @@ mkBoard tmap board' = do
               L.resetClip
               return (Left mempty, boardLogic newRowOverlay bg nextCursor nextBoard)
             Right (newRow, st) -> do
-              renderNewRow newRowOverlay newRow yoffset
+              renderNewRow newRowOverlay (map (tmap Map.!) newRow) yoffset
               L.resetClip
               return (Right st, boardLogic newRowOverlay bg nextCursor nextBoard)
           curRenderFn
