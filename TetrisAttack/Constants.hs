@@ -1,7 +1,8 @@
 module TetrisAttack.Constants (
   screenSizeX, screenSizeY, screenSizeXf, screenSizeYf, halfScreenSizeXf, halfScreenSizeYf,
   blocksPerRow, rowsPerBoard,
-  blockSize, tileSz, boardSizeX, boardSizeY, boardSizeXf, boardSizeYf, halfBoardSizeXf, halfBoardSizeYf,
+  blockSize, blockSizeN, tileSz,
+  boardSizeX, boardSizeY, boardSizeXf, boardSizeYf, halfBoardSizeXf, halfBoardSizeYf,
   boardOrigin, boardCenter, blockOrigin, blockCenter,
   RenderLayer(..), renderDepth,
   gSwapTime, gSwapDelay, gTileFallTime, gTileFallSpeed, gVanishTime
@@ -34,6 +35,9 @@ halfScreenSizeYf = 0.5 * screenSizeYf
 
 blockSize :: Int
 blockSize = 35
+
+blockSizeN :: Num a => a
+blockSizeN = fromIntegral blockSize
 
 tileSz :: V2 Int
 tileSz = V2 blockSize blockSize

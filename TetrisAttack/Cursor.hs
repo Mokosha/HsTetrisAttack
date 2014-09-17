@@ -1,5 +1,5 @@
 module TetrisAttack.Cursor (
-  Cursor, mkCursor
+  Cursor, CursorLogic, mkCursor
 ) where
 
 --------------------------------------------------------------------------------
@@ -18,6 +18,7 @@ import TetrisAttack.Constants
 import TetrisAttack.Grid
 --------------------------------------------------------------------------------
 type Cursor = (GridLocation2D, Bool)
+type CursorLogic = L.GameWire Float (L.GameMonad (), Cursor)
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
@@ -61,7 +62,7 @@ modulatePosition yoff c
   | yoff > (fromIntegral blockSize) = mapFst (mapSnd (+1)) c
   | otherwise = c
 
-mkCursor :: GridLocation2D -> IO (L.GameWire Float (L.GameMonad (), Cursor))
+mkCursor :: GridLocation2D -> IO (CursorLogic)
 mkCursor loc' = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTexture
   ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
