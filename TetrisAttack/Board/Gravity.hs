@@ -36,7 +36,7 @@ handleGravity m (bs, b) = unzipGrid (V.map handleCol $ zipGrid bs b)
           -- and then if we're going to fall, replace the current tile with the tile
           -- that the top tile turns into...
           | otherwise = let
-        
+
             tileOnTop = case vec V.! (row + 1) of
               -- If the tile on top is stationary, then it will begin falling
               (Stationary c, _) ->
