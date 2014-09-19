@@ -9,24 +9,12 @@ module TetrisAttack.Grid (
 ) where
 
 --------------------------------------------------------------------------------
-
 import Data.Either
+import Data.Maybe (fromJust)
 import Data.Monoid
 
 import qualified Data.Vector as V
-
-
 --------------------------------------------------------------------------------
-
-statefulScanl :: (a -> b -> (c, a)) -> a -> V.Vector b -> V.Vector c
-statefulScanl f start v = let
-   stepElement [] _ = []
-   stepElement (x : xs) stepper = let
-     (result, next) = f stepper x
-     in
-      result : (stepElement xs next)
-  in
-   V.fromList $ stepElement (V.toList v) start
 
 type Grid2D a = V.Vector (V.Vector a)
 type GridLocation2D = (Int, Int)
@@ -105,13 +93,21 @@ walkColumns grid walker = V.toList $ V.map (finishWalker . (V.foldl' stepWalker 
 
 newtype GridUpdater a b = GridUpdater { updateGridValue :: a -> (b, GridUpdater a b) }
 
+updateScanFn :: a -> (Maybe b, GridUpdater a b) -> (Maybe b, GridUpdater a b)
+updateScanFn x (_, GridUpdater fn) = let (y, next) = fn x in (Just y, next)
+
 updateColumns :: GridUpdater a b -> Grid2D a -> Grid2D b
 updateColumns updater = V.map updateColumn
-  where updateColumn = statefulScanl updateGridValue updater
+  where updateColumn = V.map (fromJust . fst) . V.scanl' (flip updateScanFn) (Nothing, updater)
+
+updateColumnsRev :: GridUpdater a b -> Grid2D a -> Grid2D b
+updateColumnsRev updater = V.map updateColumn
+  where updateColumn = V.map (fromJust . fst) . V.scanr' updateScanFn (Nothing, updater)
 
 eitherGrid :: Monoid e => Grid2D (Either e a) -> Either e (Grid2D a)
 eitherGrid grid = let
-  collectEithers :: Monoid e => Either e a -> Maybe (Either e a) -> GridWalker (Either e a) (Either e a)
+  collectEithers :: Monoid e => Either e a -> Maybe (Either e a) ->
+                    GridWalker (Either e a) (Either e a)
   collectEithers x Nothing = Result x
   collectEithers (Right _) (Just (Left y)) = Walker $ collectEithers (Left y)
   collectEithers (Left x) (Just (Left y)) = Walker $ collectEithers (Left $ x `mappend` y)
