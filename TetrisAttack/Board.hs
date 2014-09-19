@@ -88,6 +88,7 @@ boardLogic tmap newRowOverlay bg cursor board = let
                       renderDepth RenderLayer'Board) $
          L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
          L.identity
+  drawBG = L.addRenderAction bgxf bg
   in mkGen $ \timestep yoffset -> do
     -- Render the background
     L.addRenderAction bgxf bg
@@ -96,23 +97,20 @@ boardLogic tmap newRowOverlay bg cursor board = let
     (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep (Right yoffset)
 
     -- Set the clip to be the board space
-    L.addClipRenderAction bgxf bg
+    result <- L.addClippedRenderAction drawBG $ do
 
-    -- Step the actual board logic with the cursor to get the result
-    (boardResult, nextBoard) <- stepWire board timestep (Right (yoffset, cur))
+      -- Step the actual board logic with the cursor to get the result
+      (boardResult, nextBoard) <- stepWire board timestep (Right (yoffset, cur))
 
-    result <- case boardResult of
-      -- If we inhibit, reset the clip and abort
-      Left _ -> do
-        L.resetClip
-        return (Left mempty, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
+      case boardResult of
+        -- If we inhibit, abort
+        Left _ -> return (Left mempty, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
 
-      -- If we produced a new row, then render it before resetting the clip
-      -- and continuing.
-      Right (newRow, st) -> do
-        renderNewRow newRowOverlay (map (tmap Map.!) newRow) yoffset
-        L.resetClip
-        return (Right st, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
+        -- If we produced a new row, then render it before resetting the clip
+        -- and continuing.
+        Right (newRow, st) -> do
+          renderNewRow newRowOverlay (map (tmap Map.!) newRow) yoffset
+          return (Right st, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
 
     -- Finally render the cursor
     curRenderFn
