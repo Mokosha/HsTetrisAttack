@@ -4,7 +4,7 @@ module TetrisAttack.Grid (
   GridWalker(..),
   walkRows, walkColumns,
   mapGrid, mapGridM, mapGridM_, imapGrid, imapGridM, imapGridM_, zipGrid, unzipGrid,
-  GridUpdater(..), updateColumns,
+  GridUpdater(..), updateColumns, updateColumnsRev,
   eitherGrid
 ) where
 
@@ -98,11 +98,11 @@ updateScanFn x (_, GridUpdater fn) = let (y, next) = fn x in (Just y, next)
 
 updateColumns :: GridUpdater a b -> Grid2D a -> Grid2D b
 updateColumns updater = V.map updateColumn
-  where updateColumn = V.map (fromJust . fst) . V.scanl' (flip updateScanFn) (Nothing, updater)
+  where updateColumn = V.map (fromJust . fst) . V.postscanl' (flip updateScanFn) (Nothing, updater)
 
 updateColumnsRev :: GridUpdater a b -> Grid2D a -> Grid2D b
 updateColumnsRev updater = V.map updateColumn
-  where updateColumn = V.map (fromJust . fst) . V.scanr' updateScanFn (Nothing, updater)
+  where updateColumn = V.map (fromJust . fst) . V.postscanr' updateScanFn (Nothing, updater)
 
 eitherGrid :: Monoid e => Grid2D (Either e a) -> Either e (Grid2D a)
 eitherGrid grid = let
