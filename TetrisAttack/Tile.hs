@@ -27,8 +27,11 @@ data Tile =
   -- No tile
   Blank
 
-  -- Tile has been removed recently... will be blank soon
+  -- Tile has been removed recently... will be Vanished soon
   | Vanishing
+
+  -- Tile has been removed but the empty space can be swapped... will be Blank soon
+  | Vanished
 
   -- Tile that's been recently swapped into a new location
   | Moving
@@ -195,4 +198,7 @@ vanishing m color = let
       return Vanishing
 
   in
-   (alpha >>> render) --> blank
+   (alpha >>> render) --> vanished --> blank
+
+vanished :: TileLogic a
+vanished = (pure $ \_ -> return Vanished) >>> (for gVanishedTime)

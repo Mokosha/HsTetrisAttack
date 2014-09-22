@@ -34,7 +34,7 @@ newlyFalling :: TileLogic a
 newlyFalling = (pure (\_ -> return FallingOut) >>> (for gTileFallTime)) --> blank
 
 updateFalling :: (CombinedTile a, Maybe (CombinedTile a)) -> (CombinedTile a, FallingUpdater a)
-updateFalling ((Blank, _), Nothing) = ((Blank, blank), resolveFalling False)
+updateFalling ((Blank, _), Nothing) = ((Blank, blank), resolveFalling True)
 updateFalling (_, Nothing) = ((FallingOut, newlyFalling), resolveFalling False)
 updateFalling (_, Just ft) = (ft, resolveFalling True)
 

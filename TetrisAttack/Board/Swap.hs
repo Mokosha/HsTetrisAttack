@@ -15,6 +15,14 @@ import TetrisAttack.Tile
 swappingWire :: TileLogic a
 swappingWire = (pure (\_ -> return SwappedOut) >>> (for gSwapDelay)) --> blank
 
+-- If the tile is being switched, what is the wire that it will turn into...
+wireMap :: TileMap -> Tile -> Bool -> Maybe (TileLogic a)
+wireMap m (Stationary rcolor) False = Just $ swapping m rcolor False
+wireMap m (Stationary lcolor) True = Just $ swapping m lcolor True
+wireMap _ Blank _ = Just swappingWire
+wireMap _ Vanished _ = Just swappingWire
+wireMap _ _ _ = Nothing
+
 swapTiles :: TileMap -> Cursor -> (BoardState, Board a) -> Board a
 swapTiles _ (_, False) (_, b) = b
 swapTiles m ((x, y), True) (st, board) = let
@@ -25,15 +33,11 @@ swapTiles m ((x, y), True) (st, board) = let
   leftTile = get2D leftPos st
   rightTile = get2D rightPos st
 
-  (leftLogic, rightLogic) = case (rightTile, leftTile) of
-    (Stationary rcolor, Stationary lcolor) -> (swapping m rcolor False, swapping m lcolor True)
-    (Blank, Stationary lcolor) -> (swappingWire, swapping m lcolor True)
-    (Stationary rcolor, Blank) -> (swapping m rcolor False, swappingWire)
-    (Falling True _ rcolor, Falling True _ lcolor) ->
-      (swapping m rcolor False, swapping m lcolor True)
-    (Blank, Falling True _ lcolor) -> (swappingWire, swapping m lcolor True)
-    (Falling True _ rcolor, Blank) -> (swapping m rcolor False, swappingWire)
-    _ -> (get2D leftPos board, get2D rightPos board)
+  (leftLogic, rightLogic) =
+    case (wireMap m rightTile False, wireMap m leftTile True) of
+    (_, Nothing) -> (get2D leftPos board, get2D rightPos board)
+    (Nothing, _) -> (get2D leftPos board, get2D rightPos board)
+    (Just r, Just l) -> (r, l)
   in
    update2D leftLogic leftPos $ update2D rightLogic rightPos board
 
