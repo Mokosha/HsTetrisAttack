@@ -33,12 +33,6 @@ renderCursor ro ((curx, cury), _) = L.addRenderAction xf ro
          L.nonuniformScale (V3 (blockSizeN*8/7) (blockSizeN*4/7) 1) $
          L.identity
 
-mapFst :: (a -> c) -> (a, b) -> (c, b)
-mapFst f (a, b) = (f a, b)
-
-mapSnd :: (b -> c) -> (a, b) -> (a, c)
-mapSnd = fmap
-
 keyW :: GLFW.Key -> (a -> a) -> L.GameWire a a
 keyW key fn = (keyDebounced key >>> (arr fn)) <|> mkId
 

@@ -93,26 +93,27 @@ boardLogic tmap newRowOverlay bg cursor board = mkGen $ \timestep yoffset -> do
 
       drawBG = L.addRenderAction bgxf bg
 
+      genRow = yoffset > blockSizeN
+
+      yoff = L.translate (V3 0 (if genRow then yoffset - blockSizeN else yoffset) 0) L.identity
+
   -- First draw the background
   -- !FIXME! Should we have only one draw action actually draw both into the framebuffer
   -- and the stencil buffer?
   drawBG
 
+  -- Figure out what the cursor is doing, i.e. handle user input
+  (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep (Right genRow)
+
   -- Set the clip to be the board space
-  L.addClippedRenderAction drawBG $ do
+  result <- L.addClippedRenderAction drawBG $ do
 
-    let genRow = yoffset > blockSizeN
-        yoff = if genRow then yoffset - blockSizeN else yoffset
-
-    -- Figure out what the cursor is doing, i.e. handle user input
-    (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep (Right genRow)
-
-    L.addTransformedRenderAction (L.translate (V3 0 yoff 0) L.identity) $ do
+    L.addTransformedRenderAction yoff $ do
 
       -- Step the actual board logic with the cursor to get the result
       (boardResult, nextBoard) <- stepWire board timestep (Right (genRow, cur))
 
-      result <- case boardResult of
+      case boardResult of
         -- If we inhibit, abort
         Left _ -> return (Left mempty, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
 
@@ -122,9 +123,10 @@ boardLogic tmap newRowOverlay bg cursor board = mkGen $ \timestep yoffset -> do
           renderNewRow newRowOverlay (map (tmap Map.!) newRow)
           return (Right st, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
 
-      -- Finally render the cursor
-      curRenderFn
-      return result
+  -- Finally render the cursor outside of the clipped space
+  L.addTransformedRenderAction yoff curRenderFn
+
+  return result
 
 mkBoard :: TileMap -> Board a -> IO (L.GameWire Float BoardState)
 mkBoard tmap board' = do
