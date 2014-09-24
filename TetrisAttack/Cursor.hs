@@ -1,9 +1,12 @@
 module TetrisAttack.Cursor (
-  Cursor, CursorLogic, mkCursor
+  Cursor, CursorLogic, CustomCursorLogic,
+  CursorCommand(..),
+  loadCursorTex, playerCursor, customCursor
 ) where
 
 --------------------------------------------------------------------------------
 import Control.Wire hiding ((.), id)
+import Data.List
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Lambency as L
 import Linear.Vector
@@ -19,6 +22,15 @@ import TetrisAttack.Grid
 --------------------------------------------------------------------------------
 type Cursor = (GridLocation2D, Bool)
 type CursorLogic = L.GameWire Bool (L.GameMonad (), Cursor)
+type CustomCursorLogic a = L.GameWire (Bool, a) (L.GameMonad (), Cursor)
+
+data CursorCommand =
+  CursorCommand'MoveLeft
+  | CursorCommand'MoveRight
+  | CursorCommand'MoveDown
+  | CursorCommand'MoveUp
+  | CursorCommand'Swap
+    deriving(Eq, Ord, Enum, Show)
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
@@ -33,37 +45,67 @@ renderCursor ro ((curx, cury), _) = L.addRenderAction xf ro
          L.nonuniformScale (V3 (blockSizeN*8/7) (blockSizeN*4/7) 1) $
          L.identity
 
-keyW :: GLFW.Key -> (a -> a) -> L.GameWire a a
-keyW key fn = (keyDebounced key >>> (arr fn)) <|> mkId
+clampCursor :: Cursor -> Cursor
+clampCursor ((x, y), p) = ((L.clamp x 1 (blocksPerRow - 1), L.clamp y 1 rowsPerBoard), p)
+
+commandToCursor :: Cursor -> CursorCommand -> Cursor
+commandToCursor ((x, y), p) CursorCommand'MoveLeft = clampCursor ((x - 1, y), p)
+commandToCursor ((x, y), p) CursorCommand'MoveRight = clampCursor ((x + 1, y), p)
+commandToCursor ((x, y), p) CursorCommand'MoveDown = clampCursor ((x, y - 1), p)
+commandToCursor ((x, y), p) CursorCommand'MoveUp = clampCursor ((x, y + 1), p)
+commandToCursor (l, _) CursorCommand'Swap = (l, True)
+
+commandsToCursor :: GridLocation2D -> [CursorCommand] -> Cursor
+commandsToCursor (x, y) = foldl' commandToCursor ((x, y), False)
+
+commandWire :: L.GameWire a [CursorCommand] -> L.GameWire (GridLocation2D, a) Cursor
+commandWire cmd = (second cmd >>>) $ arr $ uncurry commandsToCursor
+
+collectWires :: [L.GameWire a b] -> L.GameWire a [b]
+collectWires [] = pure []
+collectWires (w:ws) =
+  let bs = collectWires ws
+  in (w &&& bs >>> (arr $ uncurry (:))) <|> bs
+
+inputCommands :: L.GameWire a [CursorCommand]
+inputCommands = collectWires [
+  keyDebounced GLFW.Key'Up >>> (pure CursorCommand'MoveUp),
+  keyDebounced GLFW.Key'Down >>> (pure CursorCommand'MoveDown),
+  keyDebounced GLFW.Key'Left >>> (pure CursorCommand'MoveLeft),
+  keyDebounced GLFW.Key'Right >>> (pure CursorCommand'MoveRight),
+  keyDebounced GLFW.Key'Space >>> (pure CursorCommand'Swap)]
 
 inputWire :: L.GameWire GridLocation2D Cursor
-inputWire =
-  (second $ keyW GLFW.Key'Up (+1)) >>>
-  (second $ keyW GLFW.Key'Down (flip (-) 1)) >>>
-  (first $ keyW GLFW.Key'Left (flip (-) 1)) >>>
-  (first $ keyW GLFW.Key'Right (+1)) >>>
-  (arr $ \(x, y) -> (L.clamp x 1 (blocksPerRow - 1), L.clamp y 1 rowsPerBoard)) &&&
-  ((keyDebounced GLFW.Key'Space >>> (pure True)) <|> (pure False))
+inputWire = mkId &&& mkId >>> (commandWire inputCommands)
 
 modulatePosition :: Bool -> Cursor -> Cursor
 modulatePosition False c = c
 modulatePosition True ((x, y), p) = ((x, y+1), p)
 
-mkCursor :: GridLocation2D -> IO (CursorLogic)
-mkCursor loc' = do
+cursorRenderer :: L.RenderObject -> L.GameWire Cursor (L.GameMonad (), Cursor)
+cursorRenderer ro = mkSF_ $ \c -> (renderCursor ro c, c)
+
+loadCursorTex :: IO (L.RenderObject)
+loadCursorTex = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTexture
-  ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
-  return (cursorLogic >>> (cursorRenderer $ setTrans ro))
+  L.createRenderObject L.quad (L.createTexturedMaterial tex)
+
+playerCursor :: L.RenderObject -> GridLocation2D -> CursorLogic
+playerCursor ro loc' = cursorWire >>> (cursorRenderer $ setTrans ro)
   where
-    cursorRenderer :: L.RenderObject -> L.GameWire Cursor (L.GameMonad (), Cursor)
-    cursorRenderer ro = mkSF_ $ \c -> (renderCursor ro c, c)
+    handleIpt :: L.GameWire Cursor Cursor
+    handleIpt = (arr fst) >>> (delay loc') >>> inputWire
 
-    cursorLogic :: L.GameWire Bool Cursor
-    cursorLogic = cursorWire
-      where
-        handleIpt :: L.GameWire Cursor Cursor
-        handleIpt = (arr fst) >>> (delay loc') >>> inputWire
+    cursorWire :: L.GameWire Bool Cursor
+    cursorWire = loop $ second handleIpt >>>
+                 (arr $ \(y, x) -> let z = modulatePosition y x in (z, z))
 
-        cursorWire :: L.GameWire Bool Cursor
-        cursorWire = loop $ second handleIpt >>>
-                     (arr $ \(y, x) -> let z = modulatePosition y x in (z, z))
+customCursor :: L.RenderObject ->
+                (GridLocation2D, a) ->
+                L.GameWire a [CursorCommand] ->
+                CustomCursorLogic a
+customCursor ro cursorInit cmdW = cursorWire >>> (cursorRenderer $ setTrans ro)
+  where
+    cursorWire = loop $ second runCommands >>> (arr handleNewRow)
+    runCommands = first (arr fst) >>> delay cursorInit >>> commandWire cmdW
+    handleNewRow ((b, x), c) = let c' = modulatePosition b c in (c', (c', x))

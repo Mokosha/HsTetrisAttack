@@ -4,7 +4,6 @@ module TetrisAttack.Board (
 ) where
 
 --------------------------------------------------------------------------------
-import Control.Monad.Trans
 import Control.Monad.Writer
 import Control.Monad.Random
 import Control.Wire hiding ((.))
@@ -134,7 +133,8 @@ mkBoard tmap board' = do
 
   newRowOverlay <- L.createSolidTexture (0, 0, 0, 180) >>= L.loadStaticSpriteWithTexture
   
-  cursor <- mkCursor boardCenter
+  cursorTex <- loadCursorTex
+  let cursor = playerCursor cursorTex boardCenter
   stdgen <- getStdGen
   return $
     boardLogic tmap newRowOverlay bg cursor $
