@@ -18,26 +18,20 @@ import TetrisAttack.Constants
 import TetrisAttack.Grid
 --------------------------------------------------------------------------------
 type Cursor = (GridLocation2D, Bool)
-type CursorLogic = L.GameWire Float (L.GameMonad (), Cursor)
+type CursorLogic = L.GameWire Bool (L.GameMonad (), Cursor)
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
 
-renderCursor :: L.RenderObject -> Float -> Cursor -> L.GameMonad ()
-renderCursor ro yoffset ((curx, cury), _) = L.addRenderAction xf ro
+renderCursor :: L.RenderObject -> Cursor -> L.GameMonad ()
+renderCursor ro ((curx, cury), _) = L.addRenderAction xf ro
   where
-    bs :: Float
-    bs = fromIntegral blockSize
-
     (V2 trx try) = 0.5 *^ (blockCenter (curx, cury) ^+^ (blockCenter (curx + 1, cury)))
 
     xf :: L.Transform
-    xf = L.translate (V3 trx (try + yoffset) $ renderDepth RenderLayer'Cursor) $
-         L.nonuniformScale (V3 (bs*8/7) (bs*4/7) 1) $
+    xf = L.translate (V3 trx try $ renderDepth RenderLayer'Cursor) $
+         L.nonuniformScale (V3 (blockSizeN*8/7) (blockSizeN*4/7) 1) $
          L.identity
-
-offsetWire :: L.GameWire Float Float
-offsetWire = (when (> bs) - (pure bs)) <|> mkId where bs = fromIntegral blockSize
 
 mapFst :: (a -> c) -> (a, b) -> (c, b)
 mapFst f (a, b) = (f a, b)
@@ -57,10 +51,9 @@ inputWire =
   (arr $ \(x, y) -> (L.clamp x 1 (blocksPerRow - 1), L.clamp y 1 rowsPerBoard)) &&&
   ((keyDebounced GLFW.Key'Space >>> (pure True)) <|> (pure False))
 
-modulatePosition :: Float -> Cursor -> Cursor
-modulatePosition yoff c
-  | yoff > (fromIntegral blockSize) = mapFst (mapSnd (+1)) c
-  | otherwise = c
+modulatePosition :: Bool -> Cursor -> Cursor
+modulatePosition False c = c
+modulatePosition True ((x, y), p) = ((x, y+1), p)
 
 mkCursor :: GridLocation2D -> IO (CursorLogic)
 mkCursor loc' = do
@@ -68,15 +61,15 @@ mkCursor loc' = do
   ro <- L.createRenderObject L.quad (L.createTexturedMaterial tex)
   return (cursorLogic >>> (cursorRenderer $ setTrans ro))
   where
-    cursorRenderer :: L.RenderObject -> L.GameWire (Float, Cursor) (L.GameMonad (), Cursor)
-    cursorRenderer ro = mkSF_ $ \(yoffset, c) -> (renderCursor ro yoffset c, c)
+    cursorRenderer :: L.RenderObject -> L.GameWire Cursor (L.GameMonad (), Cursor)
+    cursorRenderer ro = mkSF_ $ \c -> (renderCursor ro c, c)
 
-    cursorLogic :: L.GameWire Float (Float, Cursor)
-    cursorLogic = offsetWire &&& cursorWire
+    cursorLogic :: L.GameWire Bool Cursor
+    cursorLogic = cursorWire
       where
         handleIpt :: L.GameWire Cursor Cursor
         handleIpt = (arr fst) >>> (delay loc') >>> inputWire
 
-        cursorWire :: L.GameWire Float Cursor
+        cursorWire :: L.GameWire Bool Cursor
         cursorWire = loop $ second handleIpt >>>
                      (arr $ \(y, x) -> let z = modulatePosition y x in (z, z))

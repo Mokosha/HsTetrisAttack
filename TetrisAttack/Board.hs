@@ -4,6 +4,8 @@ module TetrisAttack.Board (
 ) where
 
 --------------------------------------------------------------------------------
+import Control.Monad.Trans
+import Control.Monad.Writer
 import Control.Monad.Random
 import Control.Wire hiding ((.))
 import qualified Data.Map as Map
@@ -52,15 +54,15 @@ renderNewRow newRowOverlay row yoff = do
   L.renderSpriteWithAlpha newRowOverlay 1.0 overlaySz overlayDepth overlayPos
 
 boardWire :: TileMap -> TileGenerator -> Board a ->
-             L.GameWire (Float, Cursor) ([TileColor], BoardState)
-boardWire tmap generator board = mkGen $ \timestep (yoffset, cur) -> do
+             L.GameWire (Bool, Cursor) ([TileColor], BoardState)
+boardWire tmap generator board = mkGen $ \timestep (genRow, cur) -> do
   -- Define the new row that is peeking out of the bottom. If we're adding
   -- the row on this instant, then generate a new row.
   let (newRow, newGenerator) = generateTiles generator blocksPerRow
-      (newgen, runlogic, yoff) =
-        if yoffset > blockSizeN
-        then (newGenerator, addBlockRow tmap newRow board, yoffset - blockSizeN)
-        else (generator, board, yoffset)
+      (newgen, runlogic) =
+        if genRow
+        then (newGenerator, addBlockRow tmap newRow board)
+        else (generator, board)
 
   -- Step each tile in the board
   resGrid <- mapGridM (flip (flip stepWire timestep) (Right undefined)) runlogic
@@ -74,47 +76,56 @@ boardWire tmap generator board = mkGen $ \timestep (yoffset, cur) -> do
     Left _ -> return (Left mempty, boardWire tmap newgen board)
     Right fns -> do
       let gridPositions =
-            generateGrid blocksPerRow rowsPerBoard $
-            \x y -> blockCenter (x+1, y+1) ^+^ (V2 0 yoff)
+            generateGrid blocksPerRow rowsPerBoard $ \x y -> blockCenter (x+1, y+1)
       st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
       return (Right (newRow, st), boardWire tmap newgen $ updateBoard tmap cur st newlogic)
 
 -- Board logic encompasses the entire board and most of the game mechanics.
 boardLogic :: TileMap -> L.Sprite -> L.RenderObject -> CursorLogic ->
-              L.GameWire (Float, Cursor) ([TileColor], BoardState) ->
+              L.GameWire (Bool, Cursor) ([TileColor], BoardState) ->
               L.GameWire Float BoardState
-boardLogic tmap newRowOverlay bg cursor board = let
-  bgxf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $
-                      renderDepth RenderLayer'Board) $
-         L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
-         L.identity
-  drawBG = L.addRenderAction bgxf bg
-  in mkGen $ \timestep yoffset -> do
-    -- Render the background
-    L.addRenderAction bgxf bg
+boardLogic tmap newRowOverlay bg cursor board = mkGen $ \timestep yoffset -> do
+
+  -- Render the background
+  let bgxf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $
+                          renderDepth RenderLayer'Board) $
+             L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
+             L.identity
+
+      drawBG = L.addRenderAction bgxf bg
+
+  -- First draw the background
+  -- !FIXME! Should we have only one draw action actually draw both into the framebuffer
+  -- and the stencil buffer?
+  drawBG
+
+  -- Set the clip to be the board space
+  L.addClippedRenderAction drawBG $ do
+
+    let genRow = yoffset > blockSizeN
+        yoff = if genRow then yoffset - blockSizeN else yoffset
 
     -- Figure out what the cursor is doing, i.e. handle user input
-    (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep (Right yoffset)
+    (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep (Right genRow)
 
-    -- Set the clip to be the board space
-    result <- L.addClippedRenderAction drawBG $ do
+    L.addTransformedRenderAction (L.translate (V3 0 yoff 0) L.identity) $ do
 
       -- Step the actual board logic with the cursor to get the result
-      (boardResult, nextBoard) <- stepWire board timestep (Right (yoffset, cur))
+      (boardResult, nextBoard) <- stepWire board timestep (Right (genRow, cur))
 
-      case boardResult of
+      result <- case boardResult of
         -- If we inhibit, abort
         Left _ -> return (Left mempty, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
 
         -- If we produced a new row, then render it before resetting the clip
         -- and continuing.
         Right (newRow, st) -> do
-          renderNewRow newRowOverlay (map (tmap Map.!) newRow) yoffset
+          renderNewRow newRowOverlay (map (tmap Map.!) newRow) 0.0
           return (Right st, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
 
-    -- Finally render the cursor
-    curRenderFn
-    return result
+      -- Finally render the cursor
+      curRenderFn
+      return result
 
 mkBoard :: TileMap -> Board a -> IO (L.GameWire Float BoardState)
 mkBoard tmap board' = do
