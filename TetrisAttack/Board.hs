@@ -85,9 +85,7 @@ boardLogic :: TileMap -> L.Sprite -> L.RenderObject -> CursorLogic ->
               L.GameWire Float BoardState
 boardLogic tmap newRowOverlay bg cursor board = mkGen $ \timestep yoffset -> do
 
-  -- Render the background
-  let bgxf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $
-                          renderDepth RenderLayer'Board) $
+  let bgxf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $ renderDepth RenderLayer'Board) $
              L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
              L.identity
 
