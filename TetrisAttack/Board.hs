@@ -39,18 +39,17 @@ updateBoard m c st = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((
 addBlockRow :: TileMap -> [TileColor] -> Board a -> Board a
 addBlockRow tmap row = V.zipWith V.cons (V.map (stationary tmap) (V.fromList row))
 
-renderNewRow :: L.Sprite -> [L.Sprite] -> Float -> L.GameMonad ()
-renderNewRow newRowOverlay row yoff = do
+renderNewRow :: L.Sprite -> [L.Sprite] -> L.GameMonad ()
+renderNewRow newRowOverlay row = do
   -- First render every tile in our new row
-  let vyo = (V2 0 yoff)
-      depth = renderDepth RenderLayer'Tiles
+  let depth = renderDepth RenderLayer'Tiles
   sequence_ $ zipWith
-    (\s x -> L.renderSprite s tileSz depth (blockCenter (x, 0) ^+^ vyo)) row [1,2..]
+    (\s x -> L.renderSprite s tileSz depth (blockCenter (x, 0))) row [1,2..]
 
   -- Then render the overlay just above the rendered tiles.
   let overlayDepth = depth + 0.001
       overlaySz = V2 (blockSize * blocksPerRow) blockSize
-      overlayPos = 0.5 *^ (blockCenter (1, 0) ^+^ (blockCenter (blocksPerRow, 0))) ^+^ vyo
+      overlayPos = 0.5 *^ (blockCenter (1, 0) ^+^ (blockCenter (blocksPerRow, 0)))
   L.renderSpriteWithAlpha newRowOverlay 1.0 overlaySz overlayDepth overlayPos
 
 boardWire :: TileMap -> TileGenerator -> Board a ->
@@ -120,7 +119,7 @@ boardLogic tmap newRowOverlay bg cursor board = mkGen $ \timestep yoffset -> do
         -- If we produced a new row, then render it before resetting the clip
         -- and continuing.
         Right (newRow, st) -> do
-          renderNewRow newRowOverlay (map (tmap Map.!) newRow) 0.0
+          renderNewRow newRowOverlay (map (tmap Map.!) newRow)
           return (Right st, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
 
       -- Finally render the cursor
