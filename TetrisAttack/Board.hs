@@ -1,6 +1,6 @@
 module TetrisAttack.Board (
   module TetrisAttack.Board.Types,
-  initBoard, mkBoard, updateBoard
+  initBoard, mkBoard, mkAIBoard, updateBoard
 ) where
 
 --------------------------------------------------------------------------------
@@ -14,6 +14,7 @@ import Linear.Vector
 import Linear.V3
 import Linear.V2
 
+import TetrisAttack.AI
 import TetrisAttack.Constants
 import TetrisAttack.Cursor
 import TetrisAttack.Grid
@@ -25,12 +26,12 @@ import TetrisAttack.Board.Gravity
 import TetrisAttack.Board.Types
 --------------------------------------------------------------------------------
 
-initBoard :: TileMap -> Board a
+initBoard :: TileMap -> BoardState
 initBoard m = let
-  stList :: [TileLogic a]
-  stList = cycle (map (stationary m) [Red, Green, Blue, Yellow, Purple])
+  stList :: [Tile]
+  stList = cycle (map Stationary [Red, Green, Blue, Yellow, Purple])
   in generateGrid blocksPerRow rowsPerBoard $
-     \x y -> if y < (rowsPerBoard - 10) then (stList !! (x + y)) else blank
+     \x y -> if y < (rowsPerBoard - 10) then (stList !! (x + y)) else Blank
 
 updateBoard :: TileMap -> Cursor -> BoardState -> Board a -> Board a
 updateBoard m c st = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((,) st)
@@ -78,20 +79,17 @@ boardWire tmap generator board = mkGen $ \timestep (genRow, cur) -> do
       st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
       return (Right (newRow, st), boardWire tmap newgen $ updateBoard tmap cur st newlogic)
 
--- Board logic encompasses the entire board and most of the game mechanics.
-boardLogic :: TileMap -> L.Sprite -> L.RenderObject -> CursorLogic ->
+bgxf :: L.Transform
+bgxf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $ renderDepth RenderLayer'Board) $
+       L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
+       L.identity
+
+boardFeedback :: TileMap -> L.Sprite -> L.RenderObject -> CursorLogic BoardState ->
               L.GameWire (Bool, Cursor) ([TileColor], BoardState) ->
-              L.GameWire Float BoardState
-boardLogic tmap newRowOverlay bg cursor board = mkGen $ \timestep yoffset -> do
-
-  let bgxf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $ renderDepth RenderLayer'Board) $
-             L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
-             L.identity
-
-      drawBG = L.addRenderAction bgxf bg
-
+              L.GameWire (Float, BoardState) (BoardState, BoardState)
+boardFeedback tmap overlay bg cursor board = mkGen $ \timestep (yoffset, bs) -> do
+  let drawBG = L.addRenderAction bgxf bg
       genRow = yoffset > blockSizeN
-
       yoff = L.translate (V3 0 (if genRow then yoffset - blockSizeN else yoffset) 0) L.identity
 
   -- First draw the background
@@ -100,42 +98,52 @@ boardLogic tmap newRowOverlay bg cursor board = mkGen $ \timestep yoffset -> do
   drawBG
 
   -- Figure out what the cursor is doing, i.e. handle user input
-  (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep (Right genRow)
+  (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep $ Right (genRow, bs)
 
-  -- Set the clip to be the board space
-  result <- L.addClippedRenderAction drawBG $ do
+  -- Set the clip to be the board space 
+  result <- L.addClippedRenderAction drawBG $ L.addTransformedRenderAction yoff $ do
 
-    L.addTransformedRenderAction yoff $ do
+    -- Step the actual board logic with the cursor to get the result
+    (boardResult, nextBoard) <- stepWire board timestep (Right (genRow, cur))
 
-      -- Step the actual board logic with the cursor to get the result
-      (boardResult, nextBoard) <- stepWire board timestep (Right (genRow, cur))
+    case boardResult of
+      -- If we inhibit, abort
+      Left str -> return (Left str, boardFeedback tmap overlay bg nextCursor nextBoard)
 
-      case boardResult of
-        -- If we inhibit, abort
-        Left _ -> return (Left mempty, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
-
-        -- If we produced a new row, then render it before resetting the clip
-        -- and continuing.
-        Right (newRow, st) -> do
-          renderNewRow newRowOverlay (map (tmap Map.!) newRow)
-          return (Right st, boardLogic tmap newRowOverlay bg nextCursor nextBoard)
+      -- If we produced a new row, then render it before resetting the clip
+      -- and continuing.
+      Right (newRow, st) -> do
+        renderNewRow overlay $ map (tmap Map.!) newRow
+        return (Right (st, st), boardFeedback tmap overlay bg nextCursor nextBoard)
 
   -- Finally render the cursor outside of the clipped space
   L.addTransformedRenderAction yoff curRenderFn
-
   return result
 
-mkBoard :: TileMap -> Board a -> IO (L.GameWire Float BoardState)
-mkBoard tmap board' = do
+boardLogic :: TileMap -> L.Sprite -> L.RenderObject -> BoardState ->
+           CursorLogic BoardState ->
+           L.GameWire (Bool, Cursor) ([TileColor], BoardState) ->
+           L.GameWire Float BoardState
+boardLogic tmap newRowOverlay bg bs cursor board =
+  loop $ second (delay bs) >>> (boardFeedback tmap newRowOverlay bg cursor board)
+
+mkBoardWith :: TileMap -> L.GameWire (Cursor, BoardState) [CursorCommand] -> IO (L.GameWire Float BoardState)
+mkBoardWith tmap commands = do
 --  (Just bgTex) <- getDataFileName ("background" <.> "png") >>= L.loadTextureFromPNG
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
   bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
 
   newRowOverlay <- L.createSolidTexture (0, 0, 0, 180) >>= L.loadStaticSpriteWithTexture
-  
-  cursorTex <- loadCursorTex
-  let cursor = playerCursor cursorTex boardCenter
+
+  cursor <- mkCursor boardCenter commands
   stdgen <- getStdGen
+  let board = initBoard tmap
   return $
-    boardLogic tmap newRowOverlay bg cursor $
-    boardWire tmap (shuffleTileGen stdgen) board'
+    boardLogic tmap newRowOverlay bg board cursor $
+    boardWire tmap (shuffleTileGen stdgen) (boardState2Board tmap board)
+
+mkBoard :: TileMap -> IO (L.GameWire Float BoardState)
+mkBoard tmap = mkBoardWith tmap inputCommands
+
+mkAIBoard :: TileMap -> IO (L.GameWire Float BoardState)
+mkAIBoard tmap = mkBoardWith tmap aiCommands

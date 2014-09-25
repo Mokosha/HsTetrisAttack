@@ -50,7 +50,5 @@ gameLoop firstBoard = let
    
 mkGame :: IO (L.GameWire GameResult GameResult)
 mkGame = do
-  tmap <- loadTiles
-  board <- mkBoard tmap $ initBoard tmap
+  board <- loadTiles >>= mkBoard
   return $ when (== Running) >>> (delayedLoop 0 $ gameLoop board) >>> (arr analyzeTiles)
-

@@ -1,12 +1,13 @@
 module TetrisAttack.Cursor (
-  Cursor, CursorLogic, CustomCursorLogic,
+  Cursor, CursorLogic,
   CursorCommand(..),
-  loadCursorTex, playerCursor, customCursor
+  mkCursor, inputCommands
 ) where
 
 --------------------------------------------------------------------------------
 import Control.Wire hiding ((.), id)
 import Data.List
+import Data.Tuple (swap)
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Lambency as L
 import Linear.Vector
@@ -21,8 +22,7 @@ import TetrisAttack.Constants
 import TetrisAttack.Grid
 --------------------------------------------------------------------------------
 type Cursor = (GridLocation2D, Bool)
-type CursorLogic = L.GameWire Bool (L.GameMonad (), Cursor)
-type CustomCursorLogic a = L.GameWire (Bool, a) (L.GameMonad (), Cursor)
+type CursorLogic a = L.GameWire (Bool, a) (L.GameMonad (), Cursor)
 
 data CursorCommand =
   CursorCommand'MoveLeft
@@ -55,11 +55,11 @@ commandToCursor ((x, y), p) CursorCommand'MoveDown = clampCursor ((x, y - 1), p)
 commandToCursor ((x, y), p) CursorCommand'MoveUp = clampCursor ((x, y + 1), p)
 commandToCursor (l, _) CursorCommand'Swap = (l, True)
 
-commandsToCursor :: GridLocation2D -> [CursorCommand] -> Cursor
-commandsToCursor (x, y) = foldl' commandToCursor ((x, y), False)
+commandsToCursor :: Cursor -> [CursorCommand] -> Cursor
+commandsToCursor c = foldl' commandToCursor c
 
-commandWire :: L.GameWire a [CursorCommand] -> L.GameWire (GridLocation2D, a) Cursor
-commandWire cmd = (second cmd >>>) $ arr $ uncurry commandsToCursor
+commandWire :: L.GameWire (Cursor, a) [CursorCommand] -> L.GameWire (Cursor, a) Cursor
+commandWire cmd = ((arr fst) &&& cmd) >>> (arr $ uncurry commandsToCursor)
 
 collectWires :: [L.GameWire a b] -> L.GameWire a [b]
 collectWires [] = pure []
@@ -67,16 +67,13 @@ collectWires (w:ws) =
   let bs = collectWires ws
   in (w &&& bs >>> (arr $ uncurry (:))) <|> bs
 
-inputCommands :: L.GameWire a [CursorCommand]
-inputCommands = collectWires [
+inputCommands :: L.GameWire (Cursor, a) [CursorCommand]
+inputCommands = (arr snd) >>> (collectWires [
   keyDebounced GLFW.Key'Up >>> (pure CursorCommand'MoveUp),
   keyDebounced GLFW.Key'Down >>> (pure CursorCommand'MoveDown),
   keyDebounced GLFW.Key'Left >>> (pure CursorCommand'MoveLeft),
   keyDebounced GLFW.Key'Right >>> (pure CursorCommand'MoveRight),
-  keyDebounced GLFW.Key'Space >>> (pure CursorCommand'Swap)]
-
-inputWire :: L.GameWire GridLocation2D Cursor
-inputWire = mkId &&& mkId >>> (commandWire inputCommands)
+  keyDebounced GLFW.Key'Space >>> (pure CursorCommand'Swap)])
 
 modulatePosition :: Bool -> Cursor -> Cursor
 modulatePosition False c = c
@@ -90,22 +87,14 @@ loadCursorTex = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTexture
   L.createRenderObject L.quad (L.createTexturedMaterial tex)
 
-playerCursor :: L.RenderObject -> GridLocation2D -> CursorLogic
-playerCursor ro loc' = cursorWire >>> (cursorRenderer $ setTrans ro)
-  where
-    handleIpt :: L.GameWire Cursor Cursor
-    handleIpt = (arr fst) >>> (delay loc') >>> inputWire
+cursorFeedback :: L.GameWire (Cursor, a) [CursorCommand] -> L.GameWire ((Bool, a), Cursor) (Cursor, Cursor)
+cursorFeedback cmdW = ((arr $ fst . fst) &&&
+                       ((arr swap) >>> (second $ arr snd) >>> (commandWire cmdW))) >>>
+                      (arr $ \(b, c) -> let c'@(loc, _) = modulatePosition b c in (c', (loc, False)))
 
-    cursorWire :: L.GameWire Bool Cursor
-    cursorWire = loop $ second handleIpt >>>
-                 (arr $ \(y, x) -> let z = modulatePosition y x in (z, z))
-
-customCursor :: L.RenderObject ->
-                (GridLocation2D, a) ->
-                L.GameWire a [CursorCommand] ->
-                CustomCursorLogic a
-customCursor ro cursorInit cmdW = cursorWire >>> (cursorRenderer $ setTrans ro)
+mkCursor :: GridLocation2D -> L.GameWire (Cursor, a) [CursorCommand] -> IO (CursorLogic a)
+mkCursor initialPosition cursorLogic = do
+  ro <- loadCursorTex
+  return $ cursorLoop >>> (cursorRenderer $ setTrans ro)
   where
-    cursorWire = loop $ second runCommands >>> (arr handleNewRow)
-    runCommands = first (arr fst) >>> delay cursorInit >>> commandWire cmdW
-    handleNewRow ((b, x), c) = let c' = modulatePosition b c in (c', (c', x))
+    cursorLoop = loop $ second (delay (initialPosition, False)) >>> (cursorFeedback cursorLogic)
