@@ -23,6 +23,10 @@ wireMap _ Blank _ = Just swappingWire
 wireMap _ Vanished _ = Just swappingWire
 wireMap _ _ _ = Nothing
 
+isStationary :: Tile -> Bool
+isStationary (Stationary _) = True
+isStationary _ = False
+
 swapTiles :: TileMap -> Cursor -> (BoardState, Board a) -> Board a
 swapTiles _ (_, False) (_, b) = b
 swapTiles m ((x, y), True) (st, board) = let
@@ -33,11 +37,16 @@ swapTiles m ((x, y), True) (st, board) = let
   leftTile = get2D leftPos st
   rightTile = get2D rightPos st
 
+  originalLogic = (get2D leftPos board, get2D rightPos board)
+
   (leftLogic, rightLogic) =
     case (wireMap m rightTile False, wireMap m leftTile True) of
-    (_, Nothing) -> (get2D leftPos board, get2D rightPos board)
-    (Nothing, _) -> (get2D leftPos board, get2D rightPos board)
-    (Just r, Just l) -> (r, l)
+      (_, Nothing) -> originalLogic
+      (Nothing, _) -> originalLogic
+      (Just r, Just l) ->
+        if (isStationary leftTile) || (isStationary rightTile)
+        then (r, l)
+        else originalLogic
   in
    update2D leftLogic leftPos $ update2D rightLogic rightPos board
 
