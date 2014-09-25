@@ -1,5 +1,5 @@
 module TetrisAttack.Board.Combos (
-  handleCombos
+  handleCombos, gatherCombos
 ) where
 
 --------------------------------------------------------------------------------
@@ -28,13 +28,9 @@ expandRows (((x, y), color), num) = [((col, y), color) | col <- [(x-num+1)..x]]
 expandCols :: (Combo, Int) -> [Combo]
 expandCols (((x, y), c), num) = [((x, row), c) | row <- [(y-num+1)..y]]
 
-handleCombos :: TileMap -> (BoardState, Board a) -> (BoardState, Board a)
-handleCombos m (st, b) = (bulkUpdate2D Vanishing (map fst gatheredTiles) st,
-                          foldr updateLogic b gatheredTiles)
+gatherCombos :: BoardState -> [Combo]
+gatherCombos st = nub $ gatheredCols ++ gatheredRows
   where
-    updateLogic :: Combo -> Board a -> Board a
-    updateLogic (loc, color) = update2D (vanishing m color) loc
-
     gatheredRows :: [Combo]
     gatheredRows =
       (concat $ zipWith mkRowCombo (walkRows st countWalker) [1..rowsPerBoard]) >>= expandRows
@@ -42,9 +38,6 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map fst gatheredTiles) st,
     gatheredCols :: [Combo]
     gatheredCols =
       (concat $ zipWith mkColCombo (walkColumns st countWalker) [1..blocksPerRow]) >>= expandCols
-
-    gatheredTiles :: [Combo]
-    gatheredTiles = nub $ gatheredCols ++ gatheredRows
 
     -- This grid walker walks along rows or columns and keeps track of stationary
     -- runs of a matching color and returns a list of all such runs.
@@ -82,3 +75,12 @@ handleCombos m (st, b) = (bulkUpdate2D Vanishing (map fst gatheredTiles) st,
                   (Stationary old) -> dump t old
                   _ -> reset t
               | otherwise = reset t
+
+handleCombos :: TileMap -> (BoardState, Board a) -> (BoardState, Board a)
+handleCombos m (st, b) = (bulkUpdate2D Vanishing (map fst gatheredTiles) st,
+                          foldr updateLogic b gatheredTiles)
+  where
+    gatheredTiles = gatherCombos st
+
+    updateLogic :: Combo -> Board a -> Board a
+    updateLogic (loc, color) = update2D (vanishing m color) loc
