@@ -14,6 +14,7 @@ import Linear.Vector
 import Linear.V2
 import Linear.V3
 import System.FilePath
+import System.Random
 
 import FRP.Netwire.Input
 
@@ -30,7 +31,14 @@ data CursorCommand =
   | CursorCommand'MoveDown
   | CursorCommand'MoveUp
   | CursorCommand'Swap
-    deriving(Eq, Ord, Enum, Show)
+    deriving(Eq, Ord, Bounded, Enum, Show)
+
+instance Random CursorCommand where
+  randomR (c1, c2) gen =
+    let (r, gen') = randomR (fromEnum c1, fromEnum c2) gen
+    in (toEnum r, gen')
+
+  random = randomR (minBound, maxBound)
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }

@@ -146,4 +146,6 @@ mkBoard :: TileMap -> IO (L.GameWire Float BoardState)
 mkBoard tmap = mkBoardWith tmap inputCommands
 
 mkAIBoard :: TileMap -> IO (L.GameWire Float BoardState)
-mkAIBoard tmap = mkBoardWith tmap aiCommands
+mkAIBoard tmap = do
+  stdgen <- getStdGen
+  mkBoardWith tmap (aiCommands stdgen)

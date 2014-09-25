@@ -3,12 +3,14 @@ module TetrisAttack.AI (
 ) where
 
 --------------------------------------------------------------------------------
-import Control.Wire (arr, pure)
+import Control.Wire hiding ((.))
 
 import Data.Function (on)
 import Data.List (sortBy)
 
 import qualified Lambency as L
+
+import System.Random
 
 import TetrisAttack.Board.Types
 import TetrisAttack.Board.Combos
@@ -16,8 +18,6 @@ import TetrisAttack.Constants
 import TetrisAttack.Cursor
 import TetrisAttack.Grid
 import TetrisAttack.Tile
-
-import Debug.Trace
 --------------------------------------------------------------------------------
 
 canSwap :: Tile -> Bool
@@ -45,8 +45,8 @@ swapTiles ((x, y), True) bs =
    update2D newRight rightPos $
    bs
 
-nextCommand :: Cursor -> BoardState -> CursorCommand
-nextCommand ((x, y), _) bs =
+nextCommand :: CursorCommand -> Cursor -> BoardState -> CursorCommand
+nextCommand fallback ((x, y), _) bs =
   let allPositions :: [Cursor]
       allPositions = [((x, y), True) | x <- [1..(blocksPerRow - 1)], y <- [1..rowsPerBoard]]
 
@@ -56,20 +56,25 @@ nextCommand ((x, y), _) bs =
 
       sortedPositions = sortBy (flip compare `on` snd) potentialCombos
 
-      (((tx, ty), _), _) = head sortedPositions
+      (((tx, ty), _), numCombos) = head sortedPositions
   in
-   if (tx, ty) == (x, y) then
-     CursorCommand'Swap
-   else if (abs (tx - x) > abs (ty - y)) then
-          if tx > x then
-            CursorCommand'MoveRight
-          else
-            CursorCommand'MoveLeft
-        else
-          if ty > y then
-            CursorCommand'MoveUp
-          else
-            CursorCommand'MoveDown
+   if numCombos == 0 then
+     fallback
+   else if (tx, ty) == (x, y) then
+          CursorCommand'Swap
+        else if (abs (tx - x) > abs (ty - y)) then
+               if tx > x then
+                 CursorCommand'MoveRight
+               else
+                 CursorCommand'MoveLeft
+             else
+               if ty > y then
+                 CursorCommand'MoveUp
+               else
+                 CursorCommand'MoveDown
 
-aiCommands :: L.GameWire (Cursor, BoardState) [CursorCommand]
-aiCommands = arr $ pure . uncurry nextCommand
+randomFeedback :: RandomGen g => L.GameWire ((Cursor, BoardState), g) (CursorCommand, g)
+randomFeedback = second (arr random) >>> (arr $ \((c, bs), (fb, gen)) -> (nextCommand fb c bs, gen))
+
+aiCommands :: RandomGen g => g -> L.GameWire (Cursor, BoardState) [CursorCommand]
+aiCommands gen = (loop $ second (delay gen) >>> randomFeedback) >>> arr pure
