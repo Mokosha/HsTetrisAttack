@@ -77,7 +77,7 @@ inputCommands = (arr snd) >>> (collectWires [
 
 modulatePosition :: Bool -> Cursor -> Cursor
 modulatePosition False c = c
-modulatePosition True ((x, y), p) = ((x, y+1), p)
+modulatePosition True ((x, y), p) = clampCursor ((x, y+1), p)
 
 cursorRenderer :: L.RenderObject -> L.GameWire Cursor (L.GameMonad (), Cursor)
 cursorRenderer ro = mkSF_ $ \c -> (renderCursor ro c, c)
