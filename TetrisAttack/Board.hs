@@ -26,8 +26,8 @@ import TetrisAttack.Board.Gravity
 import TetrisAttack.Board.Types
 --------------------------------------------------------------------------------
 
-initBoard :: TileMap -> BoardState
-initBoard m = let
+initBoard :: BoardState
+initBoard = let
   stList :: [Tile]
   stList = cycle (map Stationary [Red, Green, Blue, Yellow, Purple])
   in generateGrid blocksPerRow rowsPerBoard $
@@ -137,10 +137,9 @@ mkBoardWith tmap commands = do
 
   cursor <- mkCursor boardCenter commands
   stdgen <- getStdGen
-  let board = initBoard tmap
   return $
-    boardLogic tmap newRowOverlay bg board cursor $
-    boardWire tmap (shuffleTileGen stdgen) (boardState2Board tmap board)
+    boardLogic tmap newRowOverlay bg initBoard cursor $
+    boardWire tmap (shuffleTileGen stdgen) (boardState2Board tmap initBoard)
 
 mkBoard :: TileMap -> IO (L.GameWire Float BoardState)
 mkBoard tmap = mkBoardWith tmap inputCommands

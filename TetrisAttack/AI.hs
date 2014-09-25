@@ -48,7 +48,7 @@ swapTiles ((x, y), True) bs =
 nextCommand :: CursorCommand -> Cursor -> BoardState -> CursorCommand
 nextCommand fallback ((x, y), _) bs =
   let allPositions :: [Cursor]
-      allPositions = [((x, y), True) | x <- [1..(blocksPerRow - 1)], y <- [1..rowsPerBoard]]
+      allPositions = [((x', y'), True) | x' <- [1..(blocksPerRow - 1)], y' <- [1..rowsPerBoard]]
 
       potentialBoards = map (flip swapTiles bs) allPositions
 
