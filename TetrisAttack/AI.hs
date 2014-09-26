@@ -5,8 +5,8 @@ module TetrisAttack.AI (
 --------------------------------------------------------------------------------
 import Control.Wire hiding ((.))
 
+import Data.Foldable (maximumBy)
 import Data.Function (on)
-import Data.List (sortBy)
 
 import qualified Lambency as L
 
@@ -45,8 +45,22 @@ swapTiles ((x, y), True) bs =
    update2D newRight rightPos $
    bs
 
+heightWalker :: GridWalker Tile Int
+heightWalker = heightFrom (0, 1)
+  where
+    walkFn :: (Int, Int) -> Maybe Tile -> GridWalker Tile Int
+    walkFn (h, _) Nothing = Result h
+    walkFn (h, r) (Just Vanished) = heightFrom (h, r + 1)
+    walkFn (h, r) (Just Blank) = heightFrom (h, r + 1)
+    walkFn (h, r) (Just FallingOut) = heightFrom (h, r + 1)
+    walkFn (h, r) (Just SwappedOut) = heightFrom (h, r + 1)
+    walkFn (_, r) _ = heightFrom (r, r + 1)
+
+    heightFrom :: (Int, Int) -> GridWalker Tile Int
+    heightFrom = Walker . walkFn
+
 nextCommand :: CursorCommand -> Cursor -> BoardState -> CursorCommand
-nextCommand fallback ((x, y), _) bs =
+nextCommand fallback cur@((x, y), _) bs =
   let allPositions :: [Cursor]
       allPositions = [((x', y'), True) | x' <- [1..(blocksPerRow - 1)], y' <- [1..rowsPerBoard]]
 
@@ -54,12 +68,17 @@ nextCommand fallback ((x, y), _) bs =
 
       potentialCombos = zip allPositions $ map (length . gatherCombos) potentialBoards
 
-      sortedPositions = sortBy (flip compare `on` snd) potentialCombos
+      (((tx, ty), _), numCombos) = maximumBy (compare `on` snd) potentialCombos
 
-      (((tx, ty), _), numCombos) = head sortedPositions
+      boardHeight = maximum $ walkColumns bs heightWalker
+
+      ((_, fby), _) = commandToCursor cur fallback
   in
    if numCombos == 0 then
-     fallback
+     if fby > boardHeight then
+       CursorCommand'MoveDown
+     else
+       fallback
    else if (tx, ty) == (x, y) then
           CursorCommand'Swap
         else if (abs (tx - x) > abs (ty - y)) then
@@ -74,7 +93,8 @@ nextCommand fallback ((x, y), _) bs =
                  CursorCommand'MoveDown
 
 randomFeedback :: RandomGen g => L.GameWire ((Cursor, BoardState), g) (CursorCommand, g)
-randomFeedback = second (arr random) >>> (arr $ \((c, bs), (fb, gen)) -> (nextCommand fb c bs, gen))
+randomFeedback = second (arr random) >>>
+                 (arr $ \((c, bs), (fb, gen)) -> (nextCommand fb c bs, gen))
 
 aiCommands :: RandomGen g => g -> L.GameWire (Cursor, BoardState) [CursorCommand]
 aiCommands gen = (loop $ second (delay gen) >>> randomFeedback) >>> arr pure

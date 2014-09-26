@@ -1,6 +1,7 @@
 module TetrisAttack.Cursor (
   Cursor, CursorLogic,
   CursorCommand(..),
+  commandToCursor,
   mkCursor, inputCommands
 ) where
 
