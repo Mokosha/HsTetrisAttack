@@ -34,7 +34,7 @@ data Tile =
   | Vanished
 
   -- Tile that's been recently swapped into a new location
-  | Moving
+  | Moving TileColor
 
   -- Recently vacated tile... will become blank soon
   | SwappedOut
@@ -150,7 +150,7 @@ swapping m color movingLeft =
                 then (V2 (px - (fromIntegral blockSize)) py)
                 else (V2 (px + (fromIntegral blockSize)) py)
         L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) (lerp t otherPos pos)
-        return Moving
+        return $ Moving color
   in
    (timer gSwapTime >>> smoothstep >>> movingWire) --> (stationary m color)
 
