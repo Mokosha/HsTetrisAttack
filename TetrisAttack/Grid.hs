@@ -2,7 +2,7 @@ module TetrisAttack.Grid (
   Grid2D, GridLocation2D,
   generateGrid, fromLists, gridSize, get2D, update2D, bulkUpdate2D,
   GridWalker(..),
-  walkRows, walkColumns,
+  walkRows, walkColumns, walkColumnsRev,
   mapGrid, mapGridM, mapGridM_, imapGrid, imapGridM, imapGridM_, zipGrid, unzipGrid,
   GridUpdater(..), updateColumns, updateColumnsRev,
   eitherGrid
@@ -93,6 +93,9 @@ walkRows grid walker
 
 walkColumns :: Grid2D a -> GridWalker a b -> [b]
 walkColumns grid walker = V.toList $ V.map (finishWalker . (V.foldl' stepWalker walker)) grid
+
+walkColumnsRev :: Grid2D a -> GridWalker a b -> [b]
+walkColumnsRev grid walker = V.toList $ V.map (finishWalker . (V.foldr' (flip stepWalker) walker)) grid
 
 newtype GridUpdater a b = GridUpdater { updateGridValue :: a -> (b, GridUpdater a b) }
 
