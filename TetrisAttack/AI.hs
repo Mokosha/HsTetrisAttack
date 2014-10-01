@@ -5,7 +5,7 @@ module TetrisAttack.AI (
 --------------------------------------------------------------------------------
 import Control.Wire hiding ((.))
 
-import Data.Foldable (maximumBy)
+import Data.Foldable (maximumBy, minimumBy)
 import Data.Function (on)
 
 import qualified Lambency as L
@@ -71,22 +71,29 @@ heightWalker = heightFrom (0, 1)
     heightFrom :: (Int, Int) -> GridWalker Tile Int
     heightFrom = Walker . walkFn
 
+posDist :: GridLocation2D -> GridLocation2D -> Int
+posDist (x, y) (x', y') =
+  let dx = x - x'
+      dy = y - y'
+  in dx * dx + dy * dy
+
 nextCommand :: CursorCommand -> Cursor -> BoardState -> CursorCommand
 nextCommand fallback cur@((x, y), _) bs =
   let allPositions :: [Cursor]
-      allPositions = [((x', y'), True) | x' <- [1..(blocksPerRow - 1)], y' <- [1..rowsPerBoard]] ++ [((x, y), False)]
+      allPositions = ((x, y), False) : [((x', y'), True) | x' <- [1..(blocksPerRow - 1)], y' <- [1..rowsPerBoard]]
 
       potentialBoards = map (collapse . flip swapTiles bs) allPositions
 
       potentialCombos = zip allPositions $ map (length . gatherCombos) potentialBoards
 
-      (((tx, ty), _), numCombos) = maximumBy (compare `on` snd) potentialCombos
+      (_, maxCombos) = maximumBy (compare `on` snd) potentialCombos
+      (tx, ty) = minimumBy (compare `on` (posDist (x, y))) $ map (fst . fst) . filter ((== maxCombos) . snd) $ potentialCombos
 
       boardHeight = maximum $ walkColumns bs heightWalker
 
       ((_, fby), _) = commandToCursor cur fallback
   in
-   if numCombos == 0 then
+   if maxCombos == 0 then
      if fby > boardHeight then
        CursorCommand'MoveDown
      else
