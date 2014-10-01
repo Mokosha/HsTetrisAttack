@@ -1,6 +1,6 @@
 module TetrisAttack.Grid (
   Grid2D, GridLocation2D,
-  generateGrid, gridSize, get2D, update2D, bulkUpdate2D,
+  generateGrid, fromLists, gridSize, get2D, update2D, bulkUpdate2D,
   GridWalker(..),
   walkRows, walkColumns,
   mapGrid, mapGridM, mapGridM_, imapGrid, imapGridM, imapGridM_, zipGrid, unzipGrid,
@@ -28,6 +28,9 @@ gridSize grid
 
 generateGrid :: Int -> Int -> (Int -> Int -> a) -> Grid2D a
 generateGrid cols rows f = V.generate cols (\col -> V.generate rows (\row -> f col row))
+
+fromLists :: [[a]] -> Grid2D a
+fromLists = V.fromList . (map V.fromList)
 
 mapGrid :: (a -> b) -> Grid2D a -> Grid2D b
 mapGrid f = V.map (\v -> V.map f v)
