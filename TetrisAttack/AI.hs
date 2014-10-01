@@ -45,6 +45,18 @@ swapTiles ((x, y), True) bs =
    update2D newRight rightPos $
    bs
 
+collapseWalker :: GridWalker Tile [Tile]
+collapseWalker = Walker $ collapseWalker' []
+  where
+    collapseWalker' accum Nothing = Result accum
+    collapseWalker' accum (Just (Stationary c)) = Walker $ collapseWalker' $ (Stationary c) : accum
+    collapseWalker' accum (Just (Falling _ _ c)) = Walker $ collapseWalker' $ (Stationary c) : accum
+    collapseWalker' accum (Just (Moving c)) = Walker $ collapseWalker' $ (Stationary c) : accum
+    collapseWalker' accum (Just _) = Walker $ collapseWalker' accum
+
+collapse :: BoardState -> BoardState
+collapse bs = fromLists $ map (take rowsPerBoard . (++ (repeat Blank))) $ walkColumnsRev bs collapseWalker
+
 heightWalker :: GridWalker Tile Int
 heightWalker = heightFrom (0, 1)
   where
@@ -62,9 +74,9 @@ heightWalker = heightFrom (0, 1)
 nextCommand :: CursorCommand -> Cursor -> BoardState -> CursorCommand
 nextCommand fallback cur@((x, y), _) bs =
   let allPositions :: [Cursor]
-      allPositions = [((x', y'), True) | x' <- [1..(blocksPerRow - 1)], y' <- [1..rowsPerBoard]]
+      allPositions = [((x', y'), True) | x' <- [1..(blocksPerRow - 1)], y' <- [1..rowsPerBoard]] ++ [((x, y), False)]
 
-      potentialBoards = map (flip swapTiles bs) allPositions
+      potentialBoards = map (collapse . flip swapTiles bs) allPositions
 
       potentialCombos = zip allPositions $ map (length . gatherCombos) potentialBoards
 
