@@ -10,8 +10,6 @@ import Data.Function (on)
 
 import qualified Lambency as L
 
-import System.Random
-
 import TetrisAttack.Board.Types
 import TetrisAttack.Board.Combos
 import TetrisAttack.Constants
@@ -77,43 +75,73 @@ posDist (x, y) (x', y') =
       dy = y - y'
   in dx * dx + dy * dy
 
-nextCommand :: CursorCommand -> Cursor -> BoardState -> CursorCommand
-nextCommand fallback cur@((x, y), _) bs =
-  let allPositions :: [Cursor]
-      allPositions = ((x, y), False) : [((x', y'), True) | x' <- [1..(blocksPerRow - 1)], y' <- [1..rowsPerBoard]]
+allPositions :: [Cursor]
+allPositions = [((x', y'), True) | x' <- [1..(blocksPerRow - 1)], y' <- [1..rowsPerBoard]]
 
-      potentialBoards = map (collapse . flip swapTiles bs) allPositions
+potentialBoards :: [Cursor] -> BoardState -> [BoardState]
+potentialBoards curs bs = map (collapse . flip swapTiles bs) curs
 
-      potentialCombos = zip allPositions $ map (length . gatherCombos) potentialBoards
+boardHeights :: BoardState -> [Int]
+boardHeights = flip walkColumns heightWalker
+
+moveCursorToTarget :: Cursor -> GridLocation2D -> CursorCommand
+moveCursorToTarget ((x, y), _) (tx, ty) =
+  if (tx, ty) == (x, y) then
+    CursorCommand'Swap
+  else if (abs (tx - x) > abs (ty - y)) then
+         if tx > x then
+           CursorCommand'MoveRight
+         else
+           CursorCommand'MoveLeft
+       else
+         if ty > y then
+           CursorCommand'MoveUp
+         else
+           CursorCommand'MoveDown
+
+avg :: [Int] -> Int
+avg l = (foldl1 (+) l) `div` (length l)
+
+{--
+triageStacks :: Cursor -> BoardState -> CursorCommand
+triageStacks cur bs =
+--}
+
+selectBestCombo :: Cursor -> BoardState -> CursorCommand
+selectBestCombo cur@((x, y), _) bs =
+  let boards = potentialBoards (((x, y), False) : allPositions) bs
+
+      countCombos :: Int -> [(Cursor, Int)]
+      countCombos num = zip (((x, y), False) : allPositions) $
+                        map (length . gatherCombos num) boards
+
+      potentialCombos = countCombos 3
+      potentialPairs = countCombos 2
+
+      selectClosest :: Int -> [(Cursor, Int)] -> GridLocation2D
+      selectClosest num combos = minimumBy (compare `on` (posDist (x, y))) $ -- Select the closest
+                                 map (fst . fst) . filter ((== num) . snd) $ -- that has num combos
+                                 combos
 
       (_, maxCombos) = maximumBy (compare `on` snd) potentialCombos
-      (tx, ty) = minimumBy (compare `on` (posDist (x, y))) $ map (fst . fst) . filter ((== maxCombos) . snd) $ potentialCombos
 
-      boardHeight = maximum $ walkColumns bs heightWalker
-
-      ((_, fby), _) = commandToCursor cur fallback
+      target =
+        if maxCombos == 0 then
+          let (_, maxPairs) = maximumBy (compare `on` snd) potentialPairs
+          in selectClosest maxPairs potentialPairs
+        else
+          selectClosest maxCombos potentialCombos
   in
-   if maxCombos == 0 then
-     if fby > boardHeight then
-       CursorCommand'MoveDown
-     else
-       fallback
-   else if (tx, ty) == (x, y) then
-          CursorCommand'Swap
-        else if (abs (tx - x) > abs (ty - y)) then
-               if tx > x then
-                 CursorCommand'MoveRight
-               else
-                 CursorCommand'MoveLeft
-             else
-               if ty > y then
-                 CursorCommand'MoveUp
-               else
-                 CursorCommand'MoveDown
+   moveCursorToTarget cur target
 
-randomFeedback :: RandomGen g => L.GameWire ((Cursor, BoardState), g) (CursorCommand, g)
-randomFeedback = second (arr random) >>>
-                 (arr $ \((c, bs), (fb, gen)) -> (nextCommand fb c bs, gen))
+nextCommand :: Cursor -> BoardState -> CursorCommand
+nextCommand cur bs =
+  let heights = boardHeights bs
+      height = maximum heights
+  in
+   if height > avg heights + 5
+   then selectBestCombo cur bs -- triageStacks cur bs
+   else selectBestCombo cur bs
 
-aiCommands :: RandomGen g => g -> L.GameWire (Cursor, BoardState) [CursorCommand]
-aiCommands gen = (loop $ second (delay gen) >>> randomFeedback) >>> arr pure
+aiCommands :: L.GameWire (Cursor, BoardState) [CursorCommand]
+aiCommands = arr $ pure . uncurry nextCommand
