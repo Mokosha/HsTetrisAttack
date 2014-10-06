@@ -78,48 +78,51 @@ boardWire tmap generator board = mkGen $ \timestep (genRow, cur) -> do
       st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
       return (Right (newRow, st), boardWire tmap newgen $ updateBoard tmap cur st newlogic)
 
-bgxf :: L.Transform
-bgxf =
+bgOffset :: L.Transform
+bgOffset =
   let V2 box boy = fmap fromIntegral boardOrigin
-  in L.translate (V3 box boy $ renderDepth RenderLayer'Board) $
-     L.nonuniformScale (V3 boardSizeXf boardSizeYf 1) $
-     L.identity
+  in L.translate (V3 box boy 0) L.identity
+
+bgxf :: L.Transform
+bgxf = L.nonuniformScale (V3 boardSizeXf boardSizeYf 1) L.identity
 
 boardFeedback :: TileMap -> L.Sprite -> L.RenderObject -> CursorLogic BoardState ->
               L.GameWire (Bool, Cursor) ([TileColor], BoardState) ->
               L.GameWire (Float, BoardState) (BoardState, BoardState)
 boardFeedback tmap overlay bg cursor board = mkGen $ \timestep (yoffset, bs) -> do
-  let drawBG = L.addRenderAction bgxf bg
+  let drawBG = L.addRenderAction (L.translate (V3 0 0 $ renderDepth RenderLayer'Board) bgxf) bg
       genRow = yoffset > blockSizeN
       yoff = L.translate (V3 0 (if genRow then yoffset - blockSizeN else yoffset) 0) L.identity
 
   -- First draw the background
   -- !FIXME! Should we have only one draw action actually draw both into the framebuffer
   -- and the stencil buffer?
-  drawBG
+  L.addTransformedRenderAction bgOffset $ do
+      
+    drawBG
 
-  -- Figure out what the cursor is doing, i.e. handle user input
-  (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep $ Right (genRow, bs)
+    -- Figure out what the cursor is doing, i.e. handle user input
+    (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep $ Right (genRow, bs)
 
-  -- Set the clip to be the board space 
-  result <- L.addClippedRenderAction drawBG $ L.addTransformedRenderAction yoff $ do
+    -- Set the clip to be the board space 
+    result <- L.addClippedRenderAction drawBG $ L.addTransformedRenderAction yoff $ do
 
-    -- Step the actual board logic with the cursor to get the result
-    (boardResult, nextBoard) <- stepWire board timestep (Right (genRow, cur))
+      -- Step the actual board logic with the cursor to get the result
+      (boardResult, nextBoard) <- stepWire board timestep (Right (genRow, cur))
 
-    case boardResult of
-      -- If we inhibit, abort
-      Left str -> return (Left str, boardFeedback tmap overlay bg nextCursor nextBoard)
+      case boardResult of
+        -- If we inhibit, abort
+        Left str -> return (Left str, boardFeedback tmap overlay bg nextCursor nextBoard)
 
-      -- If we produced a new row, then render it before resetting the clip
-      -- and continuing.
-      Right (newRow, st) -> do
-        renderNewRow overlay $ map (tmap Map.!) newRow
-        return (Right (st, st), boardFeedback tmap overlay bg nextCursor nextBoard)
+        -- If we produced a new row, then render it before resetting the clip
+        -- and continuing.
+        Right (newRow, st) -> do
+          renderNewRow overlay $ map (tmap Map.!) newRow
+          return (Right (st, st), boardFeedback tmap overlay bg nextCursor nextBoard)
 
-  -- Finally render the cursor outside of the clipped space
-  L.addTransformedRenderAction yoff curRenderFn
-  return result
+    -- Finally render the cursor outside of the clipped space
+    L.addTransformedRenderAction yoff curRenderFn
+    return result
 
 boardLogic :: TileMap -> L.Sprite -> L.RenderObject -> BoardState ->
            CursorLogic BoardState ->

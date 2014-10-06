@@ -77,7 +77,7 @@ boardOrigin = let
    V2 (halfScreenX - halfBoardX) (halfScreenY - halfBoardY)
 
 blockOrigin :: (Int, Int) -> V2 Int
-blockOrigin (x, y) = blockSize *^ (V2 (x - 1) (y - 1)) ^+^ boardOrigin
+blockOrigin (x, y) = blockSize *^ (V2 (x - 1) (y - 1))
 
 blockOriginf :: Floating a => (Int, Int) -> V2 a
 blockOriginf = fmap fromIntegral . blockOrigin
