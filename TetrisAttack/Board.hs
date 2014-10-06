@@ -1,9 +1,11 @@
 module TetrisAttack.Board (
   module TetrisAttack.Board.Types,
+  BoardResources(..), loadBoardResources,
   initBoard, mkBoard, mkAIBoard, updateBoard
 ) where
 
 --------------------------------------------------------------------------------
+import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.Random
 import Control.Wire hiding ((.))
@@ -25,6 +27,23 @@ import TetrisAttack.Board.Gravity
 import TetrisAttack.Board.Types
 --------------------------------------------------------------------------------
 
+data BoardVars = BoardVars {
+  tileMap :: TileMap,
+  overlay :: L.Sprite,
+  backgroundRO :: L.RenderObject,
+  boardPos :: V2 Int
+}
+
+type BoardMonad = ReaderT BoardVars L.GameMonad
+type BoardWire = Wire L.TimeStep String BoardMonad
+
+data BoardResources = BoardResources {  
+  boardBGRO :: L.RenderObject,
+  boardRowOverlay :: L.Sprite,
+  cursorResources :: CursorResources,
+  boardGen :: StdGen
+}
+
 initBoard :: BoardState
 initBoard = let
   stList :: [Tile]
@@ -32,11 +51,17 @@ initBoard = let
   in generateGrid blocksPerRow rowsPerBoard $
      \x y -> if y < (rowsPerBoard - 10) then (stList !! (x + y)) else Blank
 
-updateBoard :: TileMap -> Cursor -> BoardState -> Board a -> Board a
-updateBoard m c st = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((,) st)
+updateBoard :: Cursor -> BoardState -> Board a -> BoardMonad (Board a)
+updateBoard c st board = do
+  vars <- ask
+  let m = tileMap vars
+      upd = (swapTiles m c) . (handleCombos m) . (handleGravity m) . ((,) st)
+  return $ upd board
 
-addBlockRow :: TileMap -> [TileColor] -> Board a -> Board a
-addBlockRow tmap row = V.zipWith V.cons (V.map (stationary tmap) (V.fromList row))
+addBlockRow :: [TileColor] -> Board a -> BoardMonad (Board a)
+addBlockRow row board = do
+  vars <- ask
+  return $ V.zipWith V.cons (V.map (stationary $ tileMap vars) (V.fromList row)) board
 
 renderNewRow :: L.Sprite -> [L.Sprite] -> L.GameMonad ()
 renderNewRow newRowOverlay row = do
@@ -51,19 +76,21 @@ renderNewRow newRowOverlay row = do
       overlayPos = blockOriginf (1, 0)
   L.renderSpriteWithAlpha newRowOverlay 1.0 overlaySz overlayDepth overlayPos
 
-boardWire :: TileMap -> TileGenerator -> Board a ->
-             L.GameWire (Bool, Cursor) ([TileColor], BoardState)
-boardWire tmap generator board = mkGen $ \timestep (genRow, cur) -> do
+boardWire :: TileGenerator -> Board a ->
+             BoardWire (Bool, Cursor) ([TileColor], BoardState)
+boardWire generator board = mkGen $ \timestep (genRow, cur) -> do
   -- Define the new row that is peeking out of the bottom. If we're adding
   -- the row on this instant, then generate a new row.
   let (newRow, newGenerator) = generateTiles generator blocksPerRow
-      (newgen, runlogic) =
-        if genRow
-        then (newGenerator, addBlockRow tmap newRow board)
-        else (generator, board)
+  (newgen, runlogic) <-
+    if genRow
+    then do
+      brd <- addBlockRow newRow board
+      return $ (newGenerator, brd)
+    else return (generator, board)
 
   -- Step each tile in the board
-  resGrid <- mapGridM (flip (flip stepWire timestep) (Right undefined)) runlogic
+  resGrid <- lift $ mapGridM (flip (flip stepWire timestep) (Right undefined)) runlogic
 
   -- Split the resulting tilestates and next wires
   let (mbTiles, newlogic) = unzipGrid resGrid
@@ -71,34 +98,38 @@ boardWire tmap generator board = mkGen $ \timestep (genRow, cur) -> do
   -- If we didn't inhibit, then render the tiles and advance. Otherwise this
   -- entire wire inhibits...
   case eitherGrid mbTiles of
-    Left _ -> return (Left mempty, boardWire tmap newgen board)
+    Left _ -> return (Left mempty, boardWire newgen board)
     Right fns -> do
       let gridPositions =
             generateGrid blocksPerRow rowsPerBoard $ \x y -> blockOriginf (x+1, y+1)
-      st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
-      return (Right (newRow, st), boardWire tmap newgen $ updateBoard tmap cur st newlogic)
+      st <- lift $ mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
+      newBoard <- updateBoard cur st newlogic
+      return (Right (newRow, st), boardWire newgen newBoard)
 
-bgOffset :: L.Transform
-bgOffset =
-  let V2 box boy = fmap fromIntegral boardOrigin
-  in L.translate (V3 box boy 0) L.identity
+offsetXform :: V2 Int -> L.Transform
+offsetXform off =
+  let V2 ox oy = fmap fromIntegral off
+  in L.translate (V3 ox oy 0) L.identity
 
 bgxf :: L.Transform
 bgxf = L.nonuniformScale (V3 boardSizeXf boardSizeYf 1) L.identity
 
-boardFeedback :: TileMap -> L.Sprite -> L.RenderObject -> CursorLogic BoardState ->
-              L.GameWire (Bool, Cursor) ([TileColor], BoardState) ->
-              L.GameWire (Float, BoardState) (BoardState, BoardState)
-boardFeedback tmap overlay bg cursor board = mkGen $ \timestep (yoffset, bs) -> do
-  let drawBG = L.addRenderAction (L.translate (V3 0 0 $ renderDepth RenderLayer'Board) bgxf) bg
+boardFeedback :: CursorLogic BoardState ->
+              BoardWire (Bool, Cursor) ([TileColor], BoardState) ->
+              BoardWire (Float, BoardState) (BoardState, BoardState)
+boardFeedback cursor board = mkGen $ \timestep (yoffset, bs) -> do
+  vars <- ask
+  
+  let drawBG = L.addRenderAction (L.translate (V3 0 0 $ renderDepth RenderLayer'Board) bgxf) $
+               backgroundRO vars
       genRow = yoffset > blockSizeN
       yoff = L.translate (V3 0 (if genRow then yoffset - blockSizeN else yoffset) 0) L.identity
 
   -- First draw the background
-  -- !FIXME! Should we have only one draw action actually draw both into the framebuffer
-  -- and the stencil buffer?
-  L.addTransformedRenderAction bgOffset $ do
-      
+  lift $ L.addTransformedRenderAction (offsetXform $ boardPos vars) $ do
+
+    -- !FIXME! Should we have only one draw action actually draw both into the framebuffer
+    -- and the stencil buffer?
     drawBG
 
     -- Figure out what the cursor is doing, i.e. handle user input
@@ -108,45 +139,57 @@ boardFeedback tmap overlay bg cursor board = mkGen $ \timestep (yoffset, bs) -> 
     result <- L.addClippedRenderAction drawBG $ L.addTransformedRenderAction yoff $ do
 
       -- Step the actual board logic with the cursor to get the result
-      (boardResult, nextBoard) <- stepWire board timestep (Right (genRow, cur))
+      let stepPrg = stepWire board timestep (Right (genRow, cur))
+      (boardResult, nextBoard) <- runReaderT stepPrg vars
 
       case boardResult of
         -- If we inhibit, abort
-        Left str -> return (Left str, boardFeedback tmap overlay bg nextCursor nextBoard)
+        Left str -> return (Left str, boardFeedback nextCursor nextBoard)
 
         -- If we produced a new row, then render it before resetting the clip
         -- and continuing.
         Right (newRow, st) -> do
-          renderNewRow overlay $ map (tmap Map.!) newRow
-          return (Right (st, st), boardFeedback tmap overlay bg nextCursor nextBoard)
+          renderNewRow (overlay vars) $ map (tileMap vars Map.!) newRow
+          return (Right (st, st), boardFeedback nextCursor nextBoard)
 
     -- Finally render the cursor outside of the clipped space
     L.addTransformedRenderAction yoff curRenderFn
     return result
 
-boardLogic :: TileMap -> L.Sprite -> L.RenderObject -> BoardState ->
-           CursorLogic BoardState ->
-           L.GameWire (Bool, Cursor) ([TileColor], BoardState) ->
-           L.GameWire Float BoardState
-boardLogic tmap newRowOverlay bg bs cursor board =
-  loop $ second (delay bs) >>> (boardFeedback tmap newRowOverlay bg cursor board)
+boardLogic :: BoardState -> CursorLogic BoardState ->
+              BoardWire (Bool, Cursor) ([TileColor], BoardState) ->
+              BoardWire Float BoardState
+boardLogic bs cursor board = loop $ second (delay bs) >>> (boardFeedback cursor board)
 
-mkBoardWith :: TileMap -> L.GameWire (Cursor, BoardState) [CursorCommand] -> IO (L.GameWire Float BoardState)
-mkBoardWith tmap commands = do
---  (Just bgTex) <- getDataFileName ("background" <.> "png") >>= L.loadTextureFromPNG
+mkBoardWith :: L.GameWire (Cursor, BoardState) [CursorCommand] ->
+               BoardResources -> TileMap -> V2 Int ->
+               L.GameWire Float BoardState
+mkBoardWith commands res tmap pos = result boardW
+  where
+    newRowOverlay = boardRowOverlay res
+    bg = boardBGRO res
+    gen = boardGen res
+    cursor = mkCursor (cursorResources res) boardCenter commands
+    bvars = BoardVars tmap newRowOverlay bg pos
+    boardW = boardLogic initBoard cursor $
+             boardWire (shuffleTileGen gen) (boardState2Board tmap initBoard)
+    result w = mkGen $ \ts f -> liftM (fmap result) $ runReaderT (stepWire w ts $ Right f) bvars
+
+mkBoard :: BoardResources -> TileMap -> V2 Int -> L.GameWire Float BoardState
+mkBoard = mkBoardWith inputCommands
+
+mkAIBoard :: BoardResources -> TileMap -> V2 Int -> L.GameWire Float BoardState
+mkAIBoard = mkBoardWith aiCommands
+
+loadBoardResources :: CursorResources -> IO (BoardResources)
+loadBoardResources curRes = do
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
   bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
-
   newRowOverlay <- L.createSolidTexture (0, 0, 0, 180) >>= L.loadStaticSpriteWithTexture
-
-  cursor <- mkCursor boardCenter commands
   stdgen <- getStdGen
-  return $
-    boardLogic tmap newRowOverlay bg initBoard cursor $
-    boardWire tmap (shuffleTileGen stdgen) (boardState2Board tmap initBoard)
-
-mkBoard :: TileMap -> IO (L.GameWire Float BoardState)
-mkBoard tmap = mkBoardWith tmap inputCommands
-
-mkAIBoard :: TileMap -> IO (L.GameWire Float BoardState)
-mkAIBoard tmap = mkBoardWith tmap aiCommands
+  return $ BoardResources {
+    boardBGRO = bg,
+    boardRowOverlay = newRowOverlay,
+    cursorResources = curRes,
+    boardGen = stdgen
+  }  

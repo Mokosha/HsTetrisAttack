@@ -1,5 +1,6 @@
 module TetrisAttack.Cursor (
   Cursor, CursorLogic,
+  CursorResources, loadCursorResources,
   CursorCommand(..),
   commandToCursor,
   mkCursor, inputCommands
@@ -40,6 +41,10 @@ instance Random CursorCommand where
     in (toEnum r, gen')
 
   random = randomR (minBound, maxBound)
+
+data CursorResources = CursorResources {
+  cursorTexture :: L.RenderObject
+}
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
@@ -107,9 +112,10 @@ cursorFeedback cmdW = ((arr $ fst . fst) &&&
                        ((arr swap) >>> (second $ arr snd) >>> (commandWire cmdW))) >>>
                       (arr $ \(b, c) -> let c'@(loc, _) = modulatePosition b c in (c', (loc, False)))
 
-mkCursor :: GridLocation2D -> L.GameWire (Cursor, a) [CursorCommand] -> IO (CursorLogic a)
-mkCursor initialPosition cursorLogic = do
-  ro <- loadCursorTex
-  return $ cursorLoop >>> (cursorRenderer $ setTrans ro)
+loadCursorResources :: IO (CursorResources)
+loadCursorResources = loadCursorTex >>= return . CursorResources 
+
+mkCursor :: CursorResources -> GridLocation2D -> L.GameWire (Cursor, a) [CursorCommand] -> CursorLogic a
+mkCursor res initialPosition cursorLogic = cursorLoop >>> (cursorRenderer $ setTrans $ cursorTexture res)
   where
     cursorLoop = loop $ second (delay (initialPosition, False)) >>> (cursorFeedback cursorLogic)
