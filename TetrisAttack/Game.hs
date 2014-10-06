@@ -61,17 +61,15 @@ twoPGameLoop adv p1 p2 = runGame p1w p2w
     p1w = gameLoop adv p1
     p2w = gameLoop adv p2
 
-    runGame :: L.GameWire GameResult BoardState ->
-               L.GameWire GameResult BoardState ->
-               L.GameWire GameResult GameResult
     runGame w1 w2 = mkGen $ \ts gr -> do
       (r1, w1') <- stepWire w1 ts (Right gr)
       (r2, w2') <- stepWire w2 ts (Right gr)
+      let gw = runGame w1' w2'
       return $ case (r1, r2) of
-        (Right bs1, Right bs2) -> (Right $ analyzeTiles bs1 <> analyzeTiles bs2, runGame w1' w2')
-        (Left e1, Left e2) -> (Left (e1 `mappend` e2), runGame w1' w2')
-        (Left e1, _) -> (Left e1, runGame w1' w2')
-        (_, Left e2) -> (Left e2, runGame w1' w2')
+        (Right bs1, Right bs2) -> (Right $ analyzeTiles bs1 <> analyzeTiles bs2, gw)
+        (Left e1, Left e2) -> (Left $ e1 <> e2, gw)
+        (Left e1, _) -> (Left e1, gw)
+        (_, Left e2) -> (Left e2, gw)
    
 mkGame :: IO (L.GameWire GameResult GameResult)
 mkGame = do
