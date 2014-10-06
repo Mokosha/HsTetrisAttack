@@ -3,7 +3,7 @@ module TetrisAttack.Constants (
   blocksPerRow, rowsPerBoard,
   blockSize, blockSizeN, tileSz,
   boardSizeX, boardSizeY, boardSizeXf, boardSizeYf, halfBoardSizeXf, halfBoardSizeYf,
-  boardOrigin, boardCenter, blockOrigin, blockCenter,
+  boardOrigin, boardCenter, blockOrigin, blockOriginf, blockCenter,
   RenderLayer(..), renderDepth,
   gSwapTime, gSwapDelay, gTileFallTime, gTileFallSpeed,
   gVanishTime, gVanishedTime
@@ -78,6 +78,9 @@ boardOrigin = let
 
 blockOrigin :: (Int, Int) -> V2 Int
 blockOrigin (x, y) = blockSize *^ (V2 (x - 1) (y - 1)) ^+^ boardOrigin
+
+blockOriginf :: Floating a => (Int, Int) -> V2 a
+blockOriginf = fmap fromIntegral . blockOrigin
 
 blockCenter :: (Int, Int) -> V2 Float
 blockCenter loc = let

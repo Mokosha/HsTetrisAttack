@@ -47,11 +47,17 @@ setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
 renderCursor :: L.RenderObject -> Cursor -> L.GameMonad ()
 renderCursor ro ((curx, cury), _) = L.addRenderAction xf ro
   where
-    (V2 trx try) = 0.5 *^ (blockCenter (curx, cury) ^+^ (blockCenter (curx + 1, cury)))
+    szx = blockSizeN * 16 / 7
+    szy = blockSizeN * 4 / 3
+
+    offx = blockSizeN / 7
+    offy = blockSizeN / 6
+
+    (V2 trx try) = blockOriginf (curx, cury) ^-^ (V2 offx offy)
 
     xf :: L.Transform
     xf = L.translate (V3 trx try $ renderDepth RenderLayer'Cursor) $
-         L.nonuniformScale (V3 (blockSizeN*8/7) (blockSizeN*4/7) 1) $
+         L.nonuniformScale (V3 szx szy 1) $
          L.identity
 
 clampCursor :: Cursor -> Cursor

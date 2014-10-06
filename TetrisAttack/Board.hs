@@ -10,7 +10,6 @@ import Control.Wire hiding ((.))
 import qualified Data.Map as Map
 import qualified Data.Vector as V
 import qualified Lambency as L
-import Linear.Vector
 import Linear.V3
 import Linear.V2
 
@@ -44,12 +43,12 @@ renderNewRow newRowOverlay row = do
   -- First render every tile in our new row
   let depth = renderDepth RenderLayer'Tiles
   sequence_ $ zipWith
-    (\s x -> L.renderSprite s tileSz depth (blockCenter (x, 0))) row [1,2..]
+    (\s x -> L.renderSprite s tileSz depth (blockOriginf (x, 0))) row [1,2..]
 
   -- Then render the overlay just above the rendered tiles.
   let overlayDepth = depth + 0.001
       overlaySz = V2 (blockSize * blocksPerRow) blockSize
-      overlayPos = 0.5 *^ (blockCenter (1, 0) ^+^ (blockCenter (blocksPerRow, 0)))
+      overlayPos = blockOriginf (1, 0)
   L.renderSpriteWithAlpha newRowOverlay 1.0 overlaySz overlayDepth overlayPos
 
 boardWire :: TileMap -> TileGenerator -> Board a ->
@@ -75,14 +74,16 @@ boardWire tmap generator board = mkGen $ \timestep (genRow, cur) -> do
     Left _ -> return (Left mempty, boardWire tmap newgen board)
     Right fns -> do
       let gridPositions =
-            generateGrid blocksPerRow rowsPerBoard $ \x y -> blockCenter (x+1, y+1)
+            generateGrid blocksPerRow rowsPerBoard $ \x y -> blockOriginf (x+1, y+1)
       st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
       return (Right (newRow, st), boardWire tmap newgen $ updateBoard tmap cur st newlogic)
 
 bgxf :: L.Transform
-bgxf = L.translate (V3 halfScreenSizeXf halfScreenSizeYf $ renderDepth RenderLayer'Board) $
-       L.nonuniformScale (V3 halfBoardSizeXf halfBoardSizeYf 1) $
-       L.identity
+bgxf =
+  let V2 box boy = fmap fromIntegral boardOrigin
+  in L.translate (V3 box boy $ renderDepth RenderLayer'Board) $
+     L.nonuniformScale (V3 boardSizeXf boardSizeYf 1) $
+     L.identity
 
 boardFeedback :: TileMap -> L.Sprite -> L.RenderObject -> CursorLogic BoardState ->
               L.GameWire (Bool, Cursor) ([TileColor], BoardState) ->

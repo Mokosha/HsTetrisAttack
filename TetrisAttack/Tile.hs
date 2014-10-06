@@ -112,7 +112,7 @@ type TileLogic a = L.GameWire a (V2 Float -> L.GameMonad Tile)
 renderTileAtDepth :: L.RenderObject -> V2 Float -> Float -> L.GameMonad ()
 renderTileAtDepth ro (V2 trx try) depth = let
   xf = L.translate (V3 trx try $ depth) $
-       L.nonuniformScale (0.5 *^ (fmap fromIntegral (V3 blockSize blockSize 2))) $
+       L.nonuniformScale (V3 blockSizeN blockSizeN 1) $
        L.identity
   in
    L.addRenderAction xf ro
