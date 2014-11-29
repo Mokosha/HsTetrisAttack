@@ -17,10 +17,9 @@ camera = pure zero >>> (L.mk2DCam screenSizeX screenSizeY)
 
 initGame :: IO (L.Game GameResult)
 initGame = do
-  noLight <- L.createNoLight
   g <- mkGame
   return $ L.Game {
-    L.staticLights = [noLight],
+    L.staticLights = [],
     L.staticGeometry = [],
     L.mainCamera = camera,
     L.dynamicLights = [],

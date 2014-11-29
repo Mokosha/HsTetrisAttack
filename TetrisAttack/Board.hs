@@ -184,7 +184,7 @@ mkAIBoard = mkBoardWith aiCommands
 loadBoardResources :: CursorResources -> IO (BoardResources)
 loadBoardResources curRes = do
   bgTex <- L.createSolidTexture (10, 20, 10, 255)
-  bg <- L.createRenderObject L.quad (L.createTexturedMaterial bgTex)
+  bg <- L.createRenderObject L.quad (L.texturedSpriteMaterial bgTex)
   newRowOverlay <- L.createSolidTexture (0, 0, 0, 180) >>= L.loadStaticSpriteWithTexture
   stdgen <- getStdGen
   return $ BoardResources {

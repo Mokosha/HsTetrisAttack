@@ -105,7 +105,7 @@ cursorRenderer ro = mkSF_ $ \c -> (renderCursor ro c, c)
 loadCursorTex :: IO (L.RenderObject)
 loadCursorTex = do
   (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTexture
-  L.createRenderObject L.quad (L.createTexturedMaterial tex)
+  L.createRenderObject L.quad (L.texturedSpriteMaterial tex)
 
 cursorFeedback :: L.GameWire (Cursor, a) [CursorCommand] -> L.GameWire ((Bool, a), Cursor) (Cursor, Cursor)
 cursorFeedback cmdW = ((arr $ fst . fst) &&&
