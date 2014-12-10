@@ -26,10 +26,5 @@ initGame = do
     L.gameLogic = g >>> (L.quitWire GLFW.Key'Q) }
 
 main :: IO ()
-main = do
-  m <- L.makeWindow screenSizeX screenSizeY "Tetris Attack"
-  g <- initGame
-  case m of
-    (Just win) -> L.run win Running g
-    Nothing -> return ()
-  L.destroyWindow m
+main = L.withWindow screenSizeX screenSizeY "Tetris Attack" $
+       L.loadAndRun Running initGame
