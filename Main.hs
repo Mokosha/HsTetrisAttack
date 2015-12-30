@@ -19,8 +19,6 @@ initGame :: IO (L.Game GameResult)
 initGame = do
   g <- mkGame
   return $ L.Game {
-    L.staticLights = [],
-    L.staticGeometry = [],
     L.mainCamera = camera,
     L.dynamicLights = [],
     L.gameLogic = g >>> (L.quitWire GLFW.Key'Q) }
