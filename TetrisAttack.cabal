@@ -24,6 +24,7 @@ data-files:          cursor.png
 
 executable TetrisAttack
   main-is:        Main.hs
+  extensions:     CPP
   other-modules:  TetrisAttack.Constants
                   TetrisAttack.Tile
                   TetrisAttack.Board

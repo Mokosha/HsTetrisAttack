@@ -6,7 +6,9 @@ module TetrisAttack.Board (
 
 --------------------------------------------------------------------------------
 import Control.Monad.Reader
+#if __GLASGOW_HASKELL__ <= 708
 import Control.Monad.Writer
+#endif
 import Control.Monad.Random
 import Control.Wire hiding ((.))
 import qualified Data.Map as Map

@@ -11,7 +11,9 @@ module TetrisAttack.Grid (
 --------------------------------------------------------------------------------
 import Data.Either
 import Data.Maybe (fromJust)
+#if __GLASGOW_HASKELL__ <= 708
 import Data.Monoid
+#endif
 
 import qualified Data.Vector as V
 --------------------------------------------------------------------------------
