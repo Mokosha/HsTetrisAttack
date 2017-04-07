@@ -13,3 +13,7 @@ cabal.config
 # Emacs things
 *~
 \#*
+
+# Stack things
+.stack-work/
+stack.yaml
