@@ -24,7 +24,8 @@ data-files:          cursor.png
 
 executable TetrisAttack
   main-is:            Main.hs
-  other-modules:      TetrisAttack.Constants
+  other-modules:      Paths_TetrisAttack
+                      TetrisAttack.Constants
                       TetrisAttack.Tile
                       TetrisAttack.Board
                       TetrisAttack.AI
