@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module TetrisAttack.Grid (
   Grid2D, GridLocation2D,
   generateGrid, fromLists, getRow, gridSize, get2D, update2D, bulkUpdate2D,

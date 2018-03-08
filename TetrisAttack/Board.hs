@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module TetrisAttack.Board (
   module TetrisAttack.Board.Types,
   BoardResources(..), loadBoardResources,
