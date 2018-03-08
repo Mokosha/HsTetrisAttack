@@ -1,7 +1,7 @@
 module Main (main) where
 
 --------------------------------------------------------------------------------
-import Control.Wire hiding ((.))
+import Control.Wire
 
 import qualified Graphics.UI.GLFW as GLFW
 
@@ -10,10 +10,12 @@ import Linear.Vector
 
 import TetrisAttack.Constants
 import TetrisAttack.Game
+
+import Prelude hiding (id, (.))
 --------------------------------------------------------------------------------
 
-camera :: L.GameWire a L.Camera
-camera = pure zero >>> (L.mk2DCam screenSizeX screenSizeY)
+camera :: L.ContWire a L.Camera
+camera = L.mk2DCam screenSizeX screenSizeY . pure zero
 
 initGame :: IO (L.Game GameResult)
 initGame = do
@@ -21,7 +23,8 @@ initGame = do
   return $ L.Game {
     L.mainCamera = camera,
     L.dynamicLights = [],
-    L.gameLogic = g >>> (L.quitWire GLFW.Key'Q) }
+    L.gameLogic = (g >>> L.quitWire GLFW.Key'Q >>> arr Just)
+                  `L.withDefault` pure Nothing }
 
 main :: IO ()
 main = L.withWindow screenSizeX screenSizeY "Tetris Attack" $

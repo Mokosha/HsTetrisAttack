@@ -123,24 +123,27 @@ boardFeedback :: CursorLogic BoardState ->
 boardFeedback cursor board = mkGen $ \timestep (yoffset, bs) -> do
   vars <- ask
   
-  let drawBG = L.addRenderAction (L.translate (V3 0 0 $ renderDepth RenderLayer'Board) bgxf) $
-               backgroundRO vars
+  let depthXF = L.translate (V3 0 0 $ renderDepth RenderLayer'Board) bgxf
+      drawBG = L.addRenderAction depthXF (backgroundRO vars)
       genRow = yoffset > blockSizeN
-      yoff = L.translate (V3 0 (if genRow then yoffset - blockSizeN else yoffset) 0) L.identity
+      yoff = if genRow then yoffset - blockSizeN else yoffset
+      offsetXF = L.translate (V3 0 yoff 0) L.identity
 
   -- First draw the background
   lift $ L.addTransformedRenderAction (offsetXform $ boardPos vars) $ do
 
-    -- !FIXME! Should we have only one draw action actually draw both into the framebuffer
-    -- and the stencil buffer?
+    -- !FIXME! Should we have only one draw action actually draw both into the
+    -- framebuffer and the stencil buffer?
     drawBG
 
     -- Figure out what the cursor is doing, i.e. handle user input
-    (Right (curRenderFn, cur), nextCursor) <- stepWire cursor timestep $ Right (genRow, bs)
+    (Right (curRenderFn, cur), nextCursor) <-
+      stepWire cursor timestep $ Right (genRow, bs)
 
     -- Set the clip to be the board space 
-    result <- L.addClippedRenderAction drawBG $ L.addTransformedRenderAction yoff $ do
-
+    result <- L.addClippedRenderAction drawBG
+            $ \_ -> L.addTransformedRenderAction offsetXF
+            $ do
       -- Step the actual board logic with the cursor to get the result
       let stepPrg = stepWire board timestep (Right (genRow, cur))
       (boardResult, nextBoard) <- runReaderT stepPrg vars
@@ -156,7 +159,7 @@ boardFeedback cursor board = mkGen $ \timestep (yoffset, bs) -> do
           return (Right (st, st), boardFeedback nextCursor nextBoard)
 
     -- Finally render the cursor outside of the clipped space
-    L.addTransformedRenderAction yoff curRenderFn
+    L.addTransformedRenderAction offsetXF curRenderFn
     return result
 
 boardLogic :: BoardState -> CursorLogic BoardState ->
