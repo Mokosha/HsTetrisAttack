@@ -1,11 +1,11 @@
+{-# LANGUAGE Arrows #-}
 module TetrisAttack.Game (
   GameResult(..),
-  mkGame
+  game
 ) where
 
 --------------------------------------------------------------------------------
-import Control.Wire hiding ((.), (<>))
-import Data.Monoid
+import Control.Wire hiding ((<>))
 import qualified Data.Vector as V
 
 import qualified Lambency as L
@@ -13,13 +13,14 @@ import qualified Lambency as L
 import Linear.Vector
 import Linear.V2
 
+import Prelude hiding (id, (.))
+
 import TetrisAttack.Constants
-import TetrisAttack.Cursor
 import TetrisAttack.Tile
 import TetrisAttack.Board
 --------------------------------------------------------------------------------
 
-type Player = L.GameWire Float BoardState
+type Player = BoardWire Float BoardState
 
 data GameResult = GameOver
                 | Running
@@ -36,48 +37,33 @@ analyzeTiles st
   | V.any (\v -> v V.! (rowsPerBoard - 1) /= Blank) st = GameOver
   | otherwise = Running
 
-gameLoop :: L.GameWire GameResult Float -> Player -> L.GameWire GameResult BoardState
-gameLoop adv player' = mkId &&& (adv >>> delay 0) >>> (loopFn 0 player')
+gameLoop :: Player -> BoardWire GameResult BoardState
+gameLoop player =
+  id &&& L.liftWire (pure 10 >>> offsetWire) >>> (
+    proc (gr, yoff) -> case gr of
+      GameOver -> L.liftWire mkEmpty -< ()
+      Running -> player -< yoff)
   where
-    loopFn :: Float -> Player -> L.GameWire (GameResult, Float) BoardState
-    loopFn flt player = mkGen $ \ts (result, df) -> runBoard result (df + flt) ts player
+    offsetWire :: L.GameWire Float Float
+    offsetWire = loop $ second (delay 0) >>> offsetFeedback
 
-    runBoard :: GameResult -> Float -> L.TimeStep -> Player ->
-                L.GameMonad (Either String BoardState,
-                             L.GameWire (GameResult, Float) BoardState)
-    runBoard GameOver _ _ b = return (Left mempty, loopFn 0 b)
-    runBoard Running flt ts board = do
-      let nextFlt = if flt > blockSizeN then (flt - blockSizeN) else flt
-      (boardState, nextBoard) <- stepWire board ts (Right flt)
-      return (boardState, loopFn nextFlt nextBoard)
+    offsetFeedback :: L.GameWire (Float, Float) (Float, Float)
+    offsetFeedback = mkSF $ \dt (s, y) ->
+      let y' = y + s*(dtime dt)
+       in ((y', if y' > blockSizeN then (y' - blockSizeN) else y'),
+           offsetFeedback)
 
-constSpeed :: L.GameWire a Float
-constSpeed = mkSF $ \ts _ -> (10*(dtime ts), constSpeed)
-
-twoPGameLoop :: L.GameWire GameResult Float -> Player -> Player ->
-                L.GameWire GameResult GameResult
-twoPGameLoop adv p1 p2 = runGame p1w p2w
+twoPGameLoop :: Player
+             -> Player
+             -> BoardWire GameResult GameResult
+twoPGameLoop p1 p2 = (p1w &&& p2w) >>> analyze >>> arr (uncurry mappend)
   where
-    p1w = gameLoop adv p1
-    p2w = gameLoop adv p2
-
-    runGame w1 w2 = mkGen $ \ts gr -> do
-      (r1, w1') <- stepWire w1 ts (Right gr)
-      (r2, w2') <- stepWire w2 ts (Right gr)
-      let gw = runGame w1' w2'
-      return $ case (r1, r2) of
-        (Right bs1, Right bs2) -> (Right $ analyzeTiles bs1 <> analyzeTiles bs2, gw)
-        (Left e1, Left e2) -> (Left $ e1 <> e2, gw)
-        (Left e1, _) -> (Left e1, gw)
-        (_, Left e2) -> (Left e2, gw)
+    analyze = (arr analyzeTiles) *** (arr analyzeTiles)
+    p1w = gameLoop p1
+    p2w = gameLoop p2
    
-mkGame :: IO (L.GameWire GameResult GameResult)
-mkGame = do
-  curRes <- loadCursorResources
-  boardRes <- loadBoardResources curRes
-  tiles <- loadTiles
-
-  let playerBoard = mkBoard boardRes tiles $ boardOrigin ^-^ (V2 300 0)
-      aiBoard = mkAIBoard boardRes tiles $ boardOrigin ^+^ (V2 300 0)
-
-  return $ when (== Running) >>> (twoPGameLoop constSpeed playerBoard aiBoard)
+game :: L.ContWire (GameResult, Bool) (Maybe GameResult)
+game = L.bracketResource loadBoardResources unloadBoardResources $
+  let playerBoard = mkBoard $ boardOrigin ^-^ (V2 300 0)
+      aiBoard = mkAIBoard $ boardOrigin ^+^ (V2 300 0)
+  in twoPGameLoop playerBoard aiBoard . L.liftWire (when (== Running))

@@ -1,6 +1,7 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module TetrisAttack.Cursor (
   Cursor, CursorLogic,
-  CursorResources, loadCursorResources,
+  CursorResources, loadCursorResources, unloadCursorResources,
   CursorCommand(..),
   commandToCursor,
   mkCursor, inputCommands
@@ -25,7 +26,8 @@ import TetrisAttack.Constants
 import TetrisAttack.Grid
 --------------------------------------------------------------------------------
 type Cursor = (GridLocation2D, Bool)
-type CursorLogic a = L.GameWire (Bool, a) (L.GameMonad (), Cursor)
+type CursorLogic a =
+  L.ResourceContextWire CursorResources (Bool, a) Cursor
 
 data CursorCommand =
   CursorCommand'MoveLeft
@@ -42,9 +44,11 @@ instance Random CursorCommand where
 
   random = randomR (minBound, maxBound)
 
-data CursorResources = CursorResources {
-  cursorTexture :: L.RenderObject
-}
+data CursorResources =
+  CursorResources
+  { cursorTexture :: L.RenderObject
+  , unloadCursorResources :: IO ()
+  }
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
@@ -89,33 +93,42 @@ collectWires (w:ws) =
 
 inputCommands :: L.GameWire (Cursor, a) [CursorCommand]
 inputCommands = (arr snd) >>> (collectWires [
-  keyDebounced GLFW.Key'Up >>> (pure CursorCommand'MoveUp),
-  keyDebounced GLFW.Key'Down >>> (pure CursorCommand'MoveDown),
-  keyDebounced GLFW.Key'Left >>> (pure CursorCommand'MoveLeft),
-  keyDebounced GLFW.Key'Right >>> (pure CursorCommand'MoveRight),
-  keyDebounced GLFW.Key'Space >>> (pure CursorCommand'Swap)])
+  keyDebounced GLFW.Key'Up >>> pure CursorCommand'MoveUp,
+  keyDebounced GLFW.Key'Down >>> pure CursorCommand'MoveDown,
+  keyDebounced GLFW.Key'Left >>> pure CursorCommand'MoveLeft,
+  keyDebounced GLFW.Key'Right >>> pure CursorCommand'MoveRight,
+  keyDebounced GLFW.Key'Space >>> pure CursorCommand'Swap])
 
 modulatePosition :: Bool -> Cursor -> Cursor
 modulatePosition False c = c
 modulatePosition True ((x, y), p) = clampCursor ((x, y+1), p)
 
-cursorRenderer :: L.RenderObject -> L.GameWire Cursor (L.GameMonad (), Cursor)
-cursorRenderer ro = mkSF_ $ \c -> (renderCursor ro c, c)
+cursorRenderer :: L.RenderObject -> L.GameWire Cursor Cursor
+cursorRenderer ro = mkGen_ $ \c -> renderCursor ro c >> return (Right c)
 
-loadCursorTex :: IO (L.RenderObject)
-loadCursorTex = do
-  (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTexture
-  L.createRenderObject L.quad (L.texturedSpriteMaterial tex)
-
-cursorFeedback :: L.GameWire (Cursor, a) [CursorCommand] -> L.GameWire ((Bool, a), Cursor) (Cursor, Cursor)
-cursorFeedback cmdW = ((arr $ fst . fst) &&&
-                       ((arr swap) >>> (second $ arr snd) >>> (commandWire cmdW))) >>>
-                      (arr $ \(b, c) -> let c'@(loc, _) = modulatePosition b c in (c', (loc, False)))
+cursorFeedback :: L.GameWire (Cursor, a) [CursorCommand]
+               -> L.GameWire ((Bool, a), Cursor) (Cursor, Cursor)
+cursorFeedback cmdW =
+  ((arr $ fst . fst) &&&
+   ((arr swap) >>> (second $ arr snd) >>> (commandWire cmdW))) >>>
+  (arr $ \(b, c) -> let c'@(loc, _) = modulatePosition b c in (c', (loc, False)))
 
 loadCursorResources :: IO (CursorResources)
-loadCursorResources = loadCursorTex >>= return . CursorResources 
+loadCursorResources = do
+  (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTexture
+  ro <- L.createRenderObject L.quad (L.texturedSpriteMaterial tex)
+  return . CursorResources ro $ do
+    L.destroyTexture tex
+    L.unloadRenderObject ro
 
-mkCursor :: CursorResources -> GridLocation2D -> L.GameWire (Cursor, a) [CursorCommand] -> CursorLogic a
-mkCursor res initialPosition cursorLogic = cursorLoop >>> (cursorRenderer $ setTrans $ cursorTexture res)
+mkCursor :: forall a
+          . GridLocation2D
+         -> L.GameWire (Cursor, a) [CursorCommand]
+         -> CursorLogic a
+mkCursor initialPosition cursorLogic =
+  L.withResource $
+  \res -> cursorLoop >>> (cursorRenderer $ setTrans $ cursorTexture res)
   where
-    cursorLoop = loop $ second (delay (initialPosition, False)) >>> (cursorFeedback cursorLogic)
+    cursorLoop :: L.GameWire (Bool, a) Cursor
+    cursorLoop = loop $ second (delay (initialPosition, False))
+                        >>> (cursorFeedback cursorLogic)

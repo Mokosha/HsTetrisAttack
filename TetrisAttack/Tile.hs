@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 module TetrisAttack.Tile (
   TileColor(..), Tile(..), TileMap, TileLogic,
   loadTiles,
@@ -10,6 +11,7 @@ import Control.Monad.Random
 import Control.Wire hiding ((.))
 import Data.Char (toLower)
 import qualified Data.Map as Map
+import GHC.Generics
 import qualified Lambency as L
 import Linear.Vector
 import Linear.V2
@@ -21,7 +23,7 @@ import TetrisAttack.Constants
 --------------------------------------------------------------------------------
 
 data TileColor = Red | Green | Blue | Yellow | Purple
-               deriving (Eq, Show, Ord, Read)
+               deriving (Eq, Show, Ord, Read, Bounded, Enum, Generic)
 
 data Tile =
   -- No tile
@@ -48,12 +50,12 @@ data Tile =
 
   -- Tile that started falling... will become blank soon
   | FallingOut
-  deriving (Eq, Show, Ord, Read)
+  deriving (Eq, Show, Ord, Read, Generic)
 
 type TileMap = Map.Map TileColor L.Sprite
 
 tilecolors :: [TileColor]
-tilecolors = [Red, Green, Blue, Yellow, Purple]
+tilecolors = [minBound..maxBound]
 
 kNumTileColors :: Int
 kNumTileColors = length tilecolors
@@ -65,12 +67,10 @@ loadTiles :: IO (TileMap)
 loadTiles = let
   loadColor :: TileColor -> IO (L.Sprite)
   loadColor color = do
-    let filename = concat ["element_", map toLower $ show color, "_square" <.> "png"]
+    let filename = concat ["element_", toLower <$> show color, "_square" <.> "png"]
     (Just sprite) <- getDataFileName filename >>= L.loadStaticSprite
     return sprite
-  in do
-    ss <- mapM loadColor tilecolors
-    return $ Map.fromList $ zip tilecolors ss
+  in (Map.fromList . zip tilecolors) <$> mapM loadColor tilecolors
 
 newtype TileGenerator = TileGen { generateTiles :: Int -> ([TileColor], TileGenerator) }
 

@@ -3,6 +3,8 @@ module Main (main) where
 --------------------------------------------------------------------------------
 import Control.Wire
 
+import FRP.Netwire.Input
+
 import qualified Graphics.UI.GLFW as GLFW
 
 import qualified Lambency as L
@@ -17,15 +19,11 @@ import Prelude hiding (id, (.))
 camera :: L.ContWire a L.Camera
 camera = L.mk2DCam screenSizeX screenSizeY . pure zero
 
-initGame :: IO (L.Game GameResult)
-initGame = do
-  g <- mkGame
-  return $ L.Game {
-    L.mainCamera = camera,
-    L.dynamicLights = [],
-    L.gameLogic = (g >>> L.quitWire GLFW.Key'Q >>> arr Just)
-                  `L.withDefault` pure Nothing }
+tetrisAttack :: L.Game GameResult
+tetrisAttack = L.Game camera [] ((id &&& quitWire) >>> game)
+  where
+    quitWire = (keyPressed GLFW.Key'Q >>> pure True) `L.withDefault` pure False
 
 main :: IO ()
 main = L.withWindow screenSizeX screenSizeY "Tetris Attack" $
-       L.loadAndRun Running initGame
+       L.run Running tetrisAttack
