@@ -70,7 +70,8 @@ renderCursor ro ((curx, cury), _) = L.addRenderAction xf ro
          L.identity
 
 clampCursor :: Cursor -> Cursor
-clampCursor ((x, y), p) = ((L.clamp x 1 (blocksPerRow - 1), L.clamp y 1 rowsPerBoard), p)
+clampCursor ((x, y), p) =
+  ((L.clamp x 1 (blocksPerRow - 1), L.clamp y 1 rowsPerBoard), p)
 
 commandToCursor :: Cursor -> CursorCommand -> Cursor
 commandToCursor ((x, y), p) CursorCommand'MoveLeft = clampCursor ((x - 1, y), p)
