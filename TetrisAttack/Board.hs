@@ -16,8 +16,7 @@ import Control.Wire
 import qualified Data.Map as Map
 import qualified Data.Vector as V
 import qualified Lambency as L
-import Linear.V3
-import Linear.V2
+import Linear
 
 import TetrisAttack.AI
 import TetrisAttack.Constants
@@ -182,9 +181,9 @@ loadBoardResources :: IO (BoardResources)
 loadBoardResources = do
   curRes <- loadCursorResources
   tiles <- loadTiles
-  bgTex <- L.createSolidTexture (10, 20, 10, 255)
+  bgTex <- L.createSolidTexture $ V4 10 20 10 255
   bg <- L.createRenderObject L.quad (L.texturedSpriteMaterial bgTex)
-  overlayTex <- L.createSolidTexture (0, 0, 0, 180)
+  overlayTex <- L.createSolidTexture $ V4 0 0 0 180
   newRowOverlay <- L.loadStaticSpriteWithTexture overlayTex
   stdgen <- getStdGen
 
