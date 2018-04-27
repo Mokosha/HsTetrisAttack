@@ -61,9 +61,9 @@ twoPGameLoop p1 p2 = (p1w &&& p2w) >>> analyze >>> arr (uncurry mappend)
     analyze = (arr analyzeTiles) *** (arr analyzeTiles)
     p1w = gameLoop p1
     p2w = gameLoop p2
-   
+
 game :: L.ContWire (GameResult, Bool) (Maybe GameResult)
-game = L.bracketResource loadBoardResources unloadBoardResources $
+game = L.bracketResource loadBoardResources $
   let playerBoard = mkBoard $ boardOrigin ^-^ (V2 300 0)
       aiBoard = mkAIBoard $ boardOrigin ^+^ (V2 300 0)
   in twoPGameLoop playerBoard aiBoard . L.liftWire (when (== Running))

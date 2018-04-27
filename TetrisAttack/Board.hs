@@ -39,7 +39,6 @@ data BoardResources =
   , backgroundRO :: L.RenderObject
   , cursorResources :: CursorResources
   , boardGen :: StdGen
-  , unloadBoardResources :: IO ()
   }
 
 type BoardWire = L.ResourceContextWire BoardResources
@@ -177,7 +176,7 @@ mkBoard = mkBoardWith inputCommands
 mkAIBoard :: V2 Int -> BoardWire Float BoardState
 mkAIBoard = mkBoardWith aiCommands
 
-loadBoardResources :: IO (BoardResources)
+loadBoardResources :: L.ResourceLoader BoardResources
 loadBoardResources = do
   curRes <- loadCursorResources
   tiles <- loadTiles
@@ -185,7 +184,7 @@ loadBoardResources = do
   bg <- L.createRenderObject L.quad (L.texturedSpriteMaterial bgTex)
   overlayTex <- L.createSolidTexture $ V4 0 0 0 180
   newRowOverlay <- L.loadStaticSpriteWithTexture overlayTex
-  stdgen <- getStdGen
+  stdgen <- liftIO getStdGen
 
   return $
     BoardResources
@@ -194,10 +193,4 @@ loadBoardResources = do
     , backgroundRO = bg
     , cursorResources = curRes
     , boardGen = stdgen
-    , unloadBoardResources = do
-      L.destroyTexture bgTex
-      L.unloadSprite newRowOverlay
-      L.unloadRenderObject bg
-      forM_ tiles L.unloadSprite
-      unloadCursorResources curRes
     }

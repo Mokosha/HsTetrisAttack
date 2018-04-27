@@ -63,16 +63,18 @@ kNumTileColors = length tilecolors
 tileintmap :: Map.Map Int TileColor
 tileintmap = Map.fromList $ zip [1,2..] tilecolors
 
-loadTiles :: IO (TileMap)
+loadTiles :: L.ResourceLoader TileMap
 loadTiles = let
-  loadColor :: TileColor -> IO (L.Sprite)
+  loadColor :: TileColor -> L.ResourceLoader L.Sprite
   loadColor color = do
     let filename = concat ["element_", toLower <$> show color, "_square" <.> "png"]
-    (Just sprite) <- getDataFileName filename >>= L.loadStaticSprite
+    (Just sprite) <- liftIO (getDataFileName filename) >>= L.loadStaticSprite
     return sprite
   in (Map.fromList . zip tilecolors) <$> mapM loadColor tilecolors
 
-newtype TileGenerator = TileGen { generateTiles :: Int -> ([TileColor], TileGenerator) }
+newtype TileGenerator = TileGen {
+  generateTiles :: Int -> ([TileColor], TileGenerator)
+}
 
 genTileGen :: RandomGen g => g -> TileGenerator
 genTileGen firstRand = TileGen $ genHelper firstRand

@@ -1,13 +1,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module TetrisAttack.Cursor (
   Cursor, CursorLogic,
-  CursorResources, loadCursorResources, unloadCursorResources,
+  CursorResources, loadCursorResources,
   CursorCommand(..),
   commandToCursor,
   mkCursor, inputCommands
 ) where
 
 --------------------------------------------------------------------------------
+import Control.Monad.Trans
 import Control.Wire hiding ((.), id)
 import Data.List
 import Data.Tuple (swap)
@@ -44,11 +45,7 @@ instance Random CursorCommand where
 
   random = randomR (minBound, maxBound)
 
-data CursorResources =
-  CursorResources
-  { cursorTexture :: L.RenderObject
-  , unloadCursorResources :: IO ()
-  }
+newtype CursorResources = CursorResources { cursorTexture :: L.RenderObject }
 
 setTrans :: L.RenderObject -> L.RenderObject
 setTrans ro = ro { L.flags = L.Transparent : (L.flags ro) }
@@ -114,13 +111,11 @@ cursorFeedback cmdW =
    ((arr swap) >>> (second $ arr snd) >>> (commandWire cmdW))) >>>
   (arr $ \(b, c) -> let c'@(loc, _) = modulatePosition b c in (c', (loc, False)))
 
-loadCursorResources :: IO (CursorResources)
+loadCursorResources :: L.ResourceLoader CursorResources
 loadCursorResources = do
-  (Just tex) <- getDataFileName ("cursor" <.> "png") >>= L.loadTexture
+  (Just tex) <- liftIO (getDataFileName ("cursor" <.> "png")) >>= L.loadTexture
   ro <- L.createRenderObject L.quad (L.texturedSpriteMaterial tex)
-  return . CursorResources ro $ do
-    L.destroyTexture tex
-    L.unloadRenderObject ro
+  return $ CursorResources ro
 
 mkCursor :: forall a
           . GridLocation2D

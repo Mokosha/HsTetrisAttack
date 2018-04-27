@@ -22,8 +22,7 @@ camera = L.mk2DCam screenSizeX screenSizeY . pure zero
 tetrisAttack :: L.Game GameResult
 tetrisAttack = L.Game camera [] ((id &&& quitWire) >>> game)
   where
-    quitWire = (keyPressed GLFW.Key'Q >>> pure True) `L.withDefault` pure False
+    quitWire = (pure True . keyPressed GLFW.Key'Q) `L.withDefault` pure False
 
 main :: IO ()
-main = L.withWindow screenSizeX screenSizeY "Tetris Attack" $
-       L.run Running tetrisAttack
+main = L.runOpenGL screenSizeX screenSizeY "Tetris Attack" Running tetrisAttack
