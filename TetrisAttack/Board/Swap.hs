@@ -5,6 +5,8 @@ module TetrisAttack.Board.Swap (
 --------------------------------------------------------------------------------
 import Control.Wire
 
+import Prelude hiding (id, (.))
+
 import TetrisAttack.Board.Types
 import TetrisAttack.Constants
 import TetrisAttack.Cursor
@@ -13,7 +15,7 @@ import TetrisAttack.Tile
 --------------------------------------------------------------------------------
 
 swappingWire :: TileLogic a
-swappingWire = (pure (\_ -> return SwappedOut) >>> (for gSwapDelay)) --> blank
+swappingWire = (for gSwapDelay . pure SwappedOut) --> blank
 
 -- If the tile is being switched, what is the wire that it will turn into...
 wireMap :: TileMap -> Tile -> Bool -> Maybe (TileLogic a)

@@ -79,7 +79,7 @@ boardOrigin = let
 blockOrigin :: (Int, Int) -> V2 Int
 blockOrigin (x, y) = blockSize *^ (V2 (x - 1) (y - 1))
 
-blockOriginf :: Floating a => (Int, Int) -> V2 a
+blockOriginf :: (Int, Int) -> V2 Float
 blockOriginf = fmap fromIntegral . blockOrigin
 
 blockCenter :: (Int, Int) -> V2 Float

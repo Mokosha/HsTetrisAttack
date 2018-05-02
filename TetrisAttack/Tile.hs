@@ -3,19 +3,19 @@ module TetrisAttack.Tile (
   TileColor(..), Tile(..), TileMap, TileLogic,
   loadTiles,
   TileGenerator(..), genTileGen, shuffleTileGen,
-  renderTileAtDepth,
   blank, stationary, swapping, falling, stillFalling, vanishing
 ) where
 --------------------------------------------------------------------------------
-import Control.Monad.Random
-import Control.Wire hiding ((.))
+import Control.Monad.Random hiding (when)
+import Control.Monad.Writer hiding (when)
+import Control.Wire
 import Data.Char (toLower)
 import qualified Data.Map as Map
 import GHC.Generics
 import qualified Lambency as L
 import Linear.Vector
 import Linear.V2
-import Linear.V3
+import Prelude hiding (id, (.))
 import System.FilePath
 
 import Paths_TetrisAttack
@@ -56,6 +56,9 @@ type TileMap = Map.Map TileColor L.Sprite
 
 tilecolors :: [TileColor]
 tilecolors = [minBound..maxBound]
+
+tileDepth :: Float
+tileDepth = renderDepth RenderLayer'Tiles
 
 kNumTileColors :: Int
 kNumTileColors = length tilecolors
@@ -109,23 +112,15 @@ shuffleTileGen firstRand = let
   in
    TileGen $ \numTiles -> genHelper firstRand numTiles (cycle tilecolors)
 
-type TileLogic a = L.GameWire a (V2 Float -> L.GameMonad Tile)
-
-renderTileAtDepth :: L.RenderObject -> V2 Float -> Float -> L.GameMonad ()
-renderTileAtDepth ro (V2 trx try) depth = let
-  xf = L.translate (V3 trx try $ depth) $
-       L.nonuniformScale (V3 blockSizeN blockSizeN 1) $
-       L.identity
-  in
-   L.addRenderAction xf ro
+type TileLogic a = L.GameWire (V2 Float) Tile
 
 blank :: TileLogic a
-blank = pure (\_ -> return Blank)
+blank = pure Blank
 
 stationary :: TileMap -> TileColor -> TileLogic a
-stationary m color = mkSF_ $ \_ -> \pos -> do
-  L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) pos
-  return $ Stationary color
+stationary m color = mkGen_ $ \pos -> do
+  L.renderSprite (m Map.! color) tileSz tileDepth pos
+  return . Right $ Stationary color
 
 countFromOne :: Float -> L.GameWire Float Float
 countFromOne end = (countToOne end) >>> (mkSF_ (1.0 -))
@@ -145,33 +140,34 @@ swapping m color movingLeft =
   let smoothstep :: L.GameWire Float Float
       smoothstep = mkSF_ $ \x -> let x3 = x*x*x in 6*x3*x*x - 15*x3*x + 10*x3
 
-      movingWire :: L.GameWire Float (V2 Float -> L.GameMonad Tile)
-      movingWire = mkSF_ $ \t -> \pos@(V2 px py) -> do
+      movingWire :: L.GameWire (V2 Float, Float) Tile
+      movingWire = mkGen_ $ \(pos@(V2 px py), t) -> do
         let otherPos =
               if movingLeft
                 then (V2 (px - (fromIntegral blockSize)) py)
                 else (V2 (px + (fromIntegral blockSize)) py)
-        L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) (lerp t otherPos pos)
-        return $ Moving color
+        L.renderSprite (m Map.! color) tileSz tileDepth (lerp t otherPos pos)
+        return . Right $ Moving color
   in
-   (timer gSwapTime >>> smoothstep >>> movingWire) --> (stationary m color)
+   (movingWire . (id &&& (smoothstep . timer gSwapTime))) --> (stationary m color)
 
 falling :: TileMap -> TileColor -> TileLogic a
 falling m color =
   let awareTimer :: Float -> L.GameWire a (Bool, Float)
-      awareTimer duration = timeF >>> (lastFrame &&& (countToOne duration >>> modTime))
+      awareTimer duration =
+        timeF >>> (lastFrame &&& (countToOne duration >>> modTime))
         where
           modTime = mkSF_ $ \t -> (t*t*(2-t))
           lastFrame = mkSF $ \dt t -> ((duration - t) < (dtime dt), lastFrame)
 
-      movingWire :: L.GameWire (Bool, Float) (V2 Float -> L.GameMonad Tile)
-      movingWire = mkSF_ $ \(lastFrame, t) -> \pos@(V2 px py) -> do
+      movingWire :: L.GameWire (V2 Float, (Bool, Float)) Tile
+      movingWire = mkGen_ $ \(pos@(V2 px py), (lastFrame, t)) -> do
         let renderPos = lerp t pos (V2 px $ py + (fromIntegral blockSize))
             (V2 _ yoff) = renderPos ^-^ pos
-        L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) renderPos
-        return $ Falling lastFrame yoff color
+        L.renderSprite (m Map.! color) tileSz tileDepth renderPos
+        return . Right $ Falling lastFrame yoff color
   in
-   (awareTimer gTileFallTime >>> movingWire) --> (stationary m color)
+   (movingWire . (id &&& (awareTimer gTileFallTime))) --> (stationary m color)
 
 stillFalling :: TileMap -> TileColor -> Float -> TileLogic a
 stillFalling m color offset =
@@ -182,25 +178,24 @@ stillFalling m color offset =
             remaining = dist - travelling
         in (Right (remaining < travelling, remaining), reduce remaining)
 
-      movingWire :: L.GameWire (Bool, Float) (V2 Float -> L.GameMonad Tile)
-      movingWire = mkSF_ $ \(lastFrame, yoff) -> \(V2 px py) -> do
-        L.renderSprite (m Map.! color) tileSz (renderDepth RenderLayer'Tiles) (V2 px (py + yoff))
-        return $ Falling lastFrame yoff color
+      movingWire :: L.GameWire (V2 Float, (Bool, Float)) Tile
+      movingWire = mkGen_ $ \(V2 px py, (lastFrame, yoff)) -> do
+        L.renderSprite (m Map.! color) tileSz tileDepth (V2 px (py + yoff))
+        return . Right $ Falling lastFrame yoff color
   in
-   ((reduce $ fromIntegral blockSize + offset) >>> movingWire) --> (stationary m color)
+   (movingWire . (id &&& (reduce $ fromIntegral blockSize + offset)))
+   --> (stationary m color)
 
 vanishing :: TileMap -> TileColor -> TileLogic a
-vanishing m color = let
-  alpha :: L.GameWire a Float
-  alpha = timer gVanishTime
+vanishing m color =
+  let alpha :: L.GameWire a Float
+      alpha = timer gVanishTime
 
-  render :: L.GameWire Float (V2 Float -> L.GameMonad Tile)
-  render = mkSF_ $ \a -> \pos -> do
-      L.renderSpriteWithAlpha (m Map.! color) a tileSz (renderDepth RenderLayer'Tiles) pos
-      return Vanishing
-
-  in
-   (alpha >>> render) --> vanished --> blank
+      render :: L.GameWire (V2 Float, Float) Tile
+      render = mkGen_ $ \(pos, a) -> do
+        L.renderSpriteWithAlpha (m Map.! color) a tileSz tileDepth pos
+        return (Right Vanishing)
+  in (render . (id &&& (when (>= 0) . alpha))) --> vanished --> blank
 
 vanished :: TileLogic a
-vanished = (pure $ \_ -> return Vanished) >>> (for gVanishedTime)
+vanished = for gVanishedTime . pure Vanished

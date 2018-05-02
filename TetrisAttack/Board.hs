@@ -67,10 +67,10 @@ renderNewRow newRowOverlay row = do
     L.renderSprite s tileSz depth (blockOriginf (x, 0))
 
   -- Then render the overlay just above the rendered tiles.
-  let overlayDepth = depth + 0.001
+  let overlayDepth = depth + 0.1
       overlaySz = V2 (blockSize * blocksPerRow) blockSize
       overlayPos = blockOriginf (1, 0)
-  L.renderSpriteWithAlpha newRowOverlay 1.0 overlaySz overlayDepth overlayPos
+  L.renderSpriteWithAlpha newRowOverlay 0.7 overlaySz overlayDepth overlayPos
 
 boardWire :: BoardWire (Bool, Cursor) ([TileColor], BoardState)
 boardWire = L.withResource $ \r -> runBoard (initGenerator r) (firstBoard r) r
@@ -86,18 +86,19 @@ boardWire = L.withResource $ \r -> runBoard (initGenerator r) (firstBoard r) r
                                then (newGenerator, addBlockRow vars newRow board)
                                else (generator, board)
 
+          gridPositions = generateGrid blocksPerRow rowsPerBoard $ \x y ->
+            blockOriginf (x+1, y+1)
+
       -- Step each tile in the board and split the resulting tilestates and next wires
       (mbTiles, newlogic) <-
-        unzipGrid <$> mapGridM (\w -> stepWire w timestep (Right undefined)) runlogic
+        unzipGrid <$> mapGridM (\(pos, w) -> stepWire w timestep (Right pos))
+                               (zipGrid gridPositions runlogic)
 
       -- If we didn't inhibit, then render the tiles and advance. Otherwise this
       -- entire wire inhibits...
       case eitherGrid mbTiles of
         Left _ -> return (Left mempty, runBoard newgen board vars)
-        Right fns -> do
-          let gridPositions =
-                generateGrid blocksPerRow rowsPerBoard $ \x y -> blockOriginf (x+1, y+1)
-          st <- mapGridM (\(pos, fn) -> fn pos) (zipGrid gridPositions fns)
+        Right st -> do
           let newBoard = updateBoard vars cur st newlogic
           return (Right (newRow, st), runBoard newgen newBoard vars)
 
@@ -154,6 +155,7 @@ boardFeedback pos cursor' board =
 
     drawNewRow :: BoardWire ([TileColor], a) a
     drawNewRow = L.withResource $ \r ->
+      L.getContinuousWire $
       L.everyFrame $ \(tiles, x) -> do
         renderNewRow (overlay r) $ map (tileMap r Map.!) tiles
         return x
@@ -182,7 +184,7 @@ loadBoardResources = do
   tiles <- loadTiles
   bgTex <- L.createSolidTexture $ V4 10 20 10 255
   bg <- L.createRenderObject L.quad (L.texturedSpriteMaterial bgTex)
-  overlayTex <- L.createSolidTexture $ V4 0 0 0 180
+  overlayTex <- L.createSolidTexture $ V4 0 0 0 255
   newRowOverlay <- L.loadStaticSpriteWithTexture overlayTex
   stdgen <- liftIO getStdGen
 

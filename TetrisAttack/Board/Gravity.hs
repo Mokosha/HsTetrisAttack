@@ -5,6 +5,8 @@ module TetrisAttack.Board.Gravity (
 --------------------------------------------------------------------------------
 import Control.Wire
 
+import Prelude hiding (id, (.))
+
 import TetrisAttack.Board.Types
 import TetrisAttack.Constants
 import TetrisAttack.Grid
@@ -31,7 +33,7 @@ gravityUpdater m = gravity m (Blank, blank)
 type FallingUpdater a = GridUpdater (CombinedTile a, Maybe (CombinedTile a)) (CombinedTile a)
 
 newlyFalling :: TileLogic a
-newlyFalling = (pure (\_ -> return FallingOut) >>> (for gTileFallTime)) --> blank
+newlyFalling = (for gTileFallTime . pure FallingOut) --> blank
 
 updateFalling :: (CombinedTile a, Maybe (CombinedTile a)) -> (CombinedTile a, FallingUpdater a)
 updateFalling ((Blank, _), Nothing) = ((Blank, blank), resolveFalling True)
